@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Finance Tracker</title>
+  <script>
+    // GitHub Pages SPA fallback: preserve the requested path and hand off to index.html
+    // (vue-router uses history mode; without this, deep links like /finance_tracker/login 404.)
+    (function () {
+      var path = window.location.pathname;
+      var search = window.location.search;
+      var hash = window.location.hash;
+      sessionStorage.setItem('ft_redirect', path + search + hash);
+      window.location.replace('/finance_tracker/');
+    })();
+  </script>
+</head>
+<body><p>Redirecting…</p></body>
+</html>
