@@ -19,6 +19,16 @@ Login  →  Dashboard · Transactions · Profile · Settings
 | **Deploy** | GitHub Pages via GitHub Actions |
 | **Version** | see [`VERSION`](./VERSION) · history in [`CHANGELOG.md`](./CHANGELOG.md) |
 
+## Screenshots
+
+| Mobile (login) | Mobile (dashboard) | Desktop (dashboard) |
+|---|---|---|
+| ![Login](docs/screenshots/login-mobile.png) | ![Dashboard](docs/screenshots/dashboard-mobile.png) | ![Dashboard desktop](docs/screenshots/dashboard-desktop.png) |
+
+More in [`docs/screenshots`](./docs/screenshots): signup, forgot password, transactions,
+new-transaction sheet, profile, settings, and an offline reload
+(`transactions-offline-mobile.png`).
+
 ---
 
 ## Quick start
