@@ -171,9 +171,23 @@ function guessCategory(note, isIncome) {
   return isIncome ? "Other" : "Other";
 }
 
-export async function parseBankPdf(arrayBuffer, onProgress) {
+export async function parseBankPdf(arrayBuffer, onProgress, password) {
   const { getDocument } = await loadPdfJs();
-  const doc = await getDocument({ data: arrayBuffer, isEvalSupported: false, useSystemFonts: true }).promise;
+  let doc;
+  try {
+    doc = await getDocument({
+      data: arrayBuffer, isEvalSupported: false, useSystemFonts: true,
+      ...(password ? { password } : {}),
+    }).promise;
+  } catch (e) {
+    // pdf.js throws PasswordException (code 1 = needed, 2 = wrong) for encrypted PDFs.
+    if (e && e.name === "PasswordException") {
+      const err = new Error(e.code === 2 ? "PDFPasswordIncorrect" : "PDFPasswordRequired");
+      err.pdfPassword = e.code === 2 ? "incorrect" : "required";
+      throw err;
+    }
+    throw e;
+  }
   const pages = [];
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p);

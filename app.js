@@ -4,7 +4,7 @@ import { createApp, ref, reactive, computed, onMounted } from "https://cdn.jsdel
 import { DB, DEFAULT_CATS } from "./db.js";
 import { parseBankPdf } from "./pdf_import.js";
 
-const APP_VERSION = "0.2.1";
+const APP_VERSION = "0.2.2";
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "JPY", "AUD", "CAD"];
 const LOCAL_FALLBACK_UID = "local";
 
@@ -41,8 +41,11 @@ const app = createApp({
     let deferredPrompt = null;
     // pdf import
     const importOpen = ref(false), importBusy = ref(false), importMsg = ref(""), parseErr = ref("");
+    const needPw = ref(false), pdfPassword = ref(""), pwErr = ref("");
     const parsed = ref([]);
     const skipDupes = ref(true);
+    let pdfBytesStore = null;
+    const parseFn = () => (window.__ftParsePdf || parseBankPdf); // test hook: stub in page_eval if needed
 
     let toastT = null;
     function toast(m) {
@@ -188,27 +191,41 @@ const app = createApp({
     function openImport() {
       importOpen.value = true; parseErr.value = ""; parsed.value = [];
     }
-    async function onPdfFile(ev) {
-      const f = ev.target.files && ev.target.files[0];
-      ev.target.value = "";
-      if (!f) return;
-      importBusy.value = true; parseErr.value = ""; parsed.value = [];
+    async function tryParsePdf(pw) {
+      importBusy.value = true; parseErr.value = ""; pwErr.value = "";
       try {
         importMsg.value = "Reading PDF…";
-        const buf = await f.arrayBuffer();
-        const res = await parseBankPdf(buf, (p) => { importMsg.value = "Parsing pages… " + Math.round(p * 100) + "%"; });
-        if (!res.transactions.length) throw new Error("No transactions found. The PDF may be scanned images (no text layer) or an unsupported layout.");
+        // slice(0): pdf.js detaches (transfers) the buffer it is given, so every
+        // attempt — including password retries — needs a fresh copy.
+        const res = await parseFn()(pdfBytesStore.slice(0), (p) => { importMsg.value = "Parsing pages… " + Math.round(p * 100) + "%"; }, pw || undefined);
+        if (!res.transactions.length) throw new Error("No transactions found. The PDF may be a scanned image (no text layer) or an unsupported layout.");
         const existing = new Set(DB.txs(uid.value).map((t) => (t.date || "") + "|" + Number(t.amount) + "|" + String(t.note || "").toLowerCase().slice(0, 40)));
         parsed.value = res.transactions.slice(0, 300).map((r) => {
           const key = (r.date || "") + "|" + Number(r.amount) + "|" + String(r.note || "").toLowerCase().slice(0, 40);
           const dupe = existing.has(key);
           return { ...r, checked: !dupe || !skipDupes.value, dupe };
         });
+        needPw.value = false;
         importMsg.value = "";
         toast(res.transactions.length + " found" + (res.headerFound ? "" : " (no debit/credit header — check kinds)"));
-      } catch (e) { parseErr.value = "Import failed: " + (e.message || e); }
+      } catch (e) {
+        if (e && e.pdfPassword) {
+          needPw.value = true;
+          pwErr.value = e.pdfPassword === "incorrect" ? "Wrong password — try again." : "";
+          importMsg.value = "";
+        } else { parseErr.value = "Import failed: " + (e.message || e); }
+      }
       importBusy.value = false;
     }
+    async function onPdfFile(ev) {
+      const f = ev.target.files && ev.target.files[0];
+      ev.target.value = "";
+      if (!f) return;
+      pdfBytesStore = await f.arrayBuffer();
+      parsed.value = []; needPw.value = false; pdfPassword.value = "";
+      await tryParsePdf("");
+    }
+    function unlockPdf() { if (pdfBytesStore && pdfPassword.value) tryParsePdf(pdfPassword.value); }
     function applyDupeFlags() {
       if (skipDupes.value) for (const r of parsed.value) if (r.dupe) r.checked = false;
     }
@@ -295,6 +312,7 @@ const app = createApp({
       boot, busy, profileName, memberSince, tab, txs, q, kindFilter, showModal, editing, form,
       settings, online, pglite, toastMsg, version, changelog, canInstall,
       importOpen, importBusy, importMsg, parseErr, parsed, skipDupes,
+      needPw, pdfPassword, pwErr, unlockPdf,
       CURRENCIES, cats, catsForKind, stats, monthly, maxBar, topCats, filtered, recent,
       selectedCount, dupeCount,
       money, openAdd, openEdit, setKind, saveTx, delTx, loadSample,
@@ -410,6 +428,8 @@ const app = createApp({
       <div v-if="!parsed.length && !importBusy" class="field"><label>PDF file</label><input class="input" type="file" accept="application/pdf,.pdf" @change="onPdfFile"></div>
       <div v-if="importBusy" class="okmsg"><span class="spin"></span> {{importMsg}}</div>
       <div v-if="parseErr" class="err">{{parseErr}}</div>
+      <div v-if="needPw && !parsed.length && !importBusy" class="field"><label>PDF password</label><div class="row2"><input class="input" v-model="pdfPassword" type="password" placeholder="Enter PDF password" @keyup.enter="unlockPdf"><button class="btn sm" @click="unlockPdf">Unlock</button></div><p class="hint">This statement is password protected (banks often use account number, DOB or PAN). The password never leaves this device.</p></div>
+      <div v-if="pwErr" class="err">{{pwErr}}</div>
       <div v-if="parsed.length">
         <div class="toolbar"><label class="sub"><input type="checkbox" v-model="skipDupes" @change="applyDupeFlags"> skip duplicates ({{dupeCount}})</label><span class="sp"></span><b class="sub">{{selectedCount}} selected</b></div>
         <div style="max-height:320px;overflow:auto;border:1.5px solid var(--ink);border-radius:10px;padding:4px 8px;">

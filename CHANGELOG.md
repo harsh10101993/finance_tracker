@@ -4,6 +4,12 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.2] - 2026-11-11
+### Added
+- Password-protected PDF support: if a statement needs a password, the import
+  dialog asks for it (wrong passwords can be retried). The password is only used
+  to unlock the file in memory and never leaves the device.
+
 ## [0.2.1] - 2026-11-11
 ### Fixed
 - Bank PDF import on the deployed site: pdf.js/PGlite CDN imports are now full
