@@ -4,6 +4,14 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.3] - 2026-11-11
+### Fixed
+- Amount parsing for real-world statements: 10+ digit reference/UTR/account numbers
+  are never treated as money; amounts with paise win over bare integers (years, ref
+  fragments); wider column geometry (nearest-column wins, balance excluded);
+  "credit card payment" no longer misread as a credit. Import preview gains a
+  "details" toggle showing per-row detected amounts, rule and debit/credit split.
+
 ## [0.2.2] - 2026-11-11
 ### Added
 - Password-protected PDF support: if a statement needs a password, the import

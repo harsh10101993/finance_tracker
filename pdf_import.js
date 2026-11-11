@@ -17,9 +17,9 @@ async function loadPdfJs() {
   return mod;
 }
 
-const DEBIT_WORDS = ["debit", "withdrawal", "withdrawl", "withdrawn", "paid out", "spent"];
-const CREDIT_WORDS = ["credit", "deposit", "deposited", "received"];
-const BAL_WORDS = ["balance", "closing"];
+const DEBIT_WORDS = ["debit", "withdrawal", "withdrawl", "withdrawn", "paid out", "paid", "spent", "dr"];
+const CREDIT_WORDS = ["credit", "deposit", "deposited", "received", "cr"];
+const BAL_WORDS = ["balance", "closing", "running", "available"];
 const DR_RE = /\bdr\b/i, CR_RE = /\bcr\b/i;
 const AMT_RE = /\d[\d,]*\.\d{2}|\d[\d,]*/;
 const DATE_RES = [
@@ -102,42 +102,54 @@ function parsePages(pages) {
       // amounts with x positions (date digits stripped first so DD/MM/YYYY
       // never contributes bogus "amounts" like 05, 11, 2026)
       const stripDates = (s) => s.replace(DATE_RES[0], " ").replace(DATE_RES[1], " ").replace(DATE_RES[2], " ");
-      const amts = [];
+      const rawAmts = [];
       for (const c of row.cells) {
         const toks = stripDates(c.str).match(new RegExp(AMT_RE.source, "g")) || [];
         for (const t of toks) {
-          if (t.replace(/,/g, "").length < 1) continue;
-          amts.push({ v: numVal(t), x: c.x, raw: t });
+          const digits = t.replace(/[^0-9]/g, "");
+          if (digits.length > 10) continue; // UTR / account / phone numbers, not money
+          if (digits.length < 1) continue;
+          rawAmts.push({ v: numVal(t), x: c.x, raw: t });
         }
       }
-      if (!amts.length) continue;
-      let debit = 0, credit = 0;
+      if (!rawAmts.length) continue;
+      // Prefer amounts with paise: bare integers are usually years/ref fragments.
+      const hasDec = rawAmts.some((a) => a.raw.includes("."));
+      const amts = hasDec ? rawAmts.filter((a) => a.raw.includes(".")) : rawAmts;
+      const dbgBits = ["amounts:[" + amts.map((a) => a.raw + "@" + Math.round(a.x)).join(",") + "]"];
+      let debit = 0, credit = 0, rule = "";
       const dr = DR_RE.test(line), cr = CR_RE.test(line);
+      // "credit card payment" is an expense, not a credit — ignore that phrase for keywords.
+      const kwLine = line.replace(/credit\s*card/gi, "");
       if (dr || cr) {
         // Explicit Dr/Cr marker beats column geometry (different layouts mix per row).
         const v = amts[0].v;
         if (cr && !dr) credit = v; else debit = v;
+        rule = "dr-cr-marker";
       } else if (debitX != null && creditX != null && amts.length >= 1) {
         for (const a of amts) {
           const dd = Math.abs(a.x - debitX), dc = Math.abs(a.x - creditX);
           const db = balX != null ? Math.abs(a.x - balX) : Infinity;
-          if (dd < db && dd <= dc && dd < 90) debit = Math.max(debit, a.v);
-          else if (dc < db && dc < dd && dc < 90) credit = Math.max(credit, a.v);
-          // else: nearer to balance column (or neither) → ignore
+          // nearest column wins (generous cap: real statements are wide);
+          // balance-nearest amounts are ignored.
+          if (dd <= dc && dd <= db && dd < 250) { debit = Math.max(debit, a.v); rule = "geom-debit"; }
+          else if (dc < dd && dc <= db && dc < 250) { credit = Math.max(credit, a.v); rule = "geom-credit"; }
         }
         // geometry failed (scanned-header offset) -> fall back to order
         if (!debit && !credit && amts.length >= 2) {
           const sorted = amts.slice().sort((p, q) => p.x - q.x);
-          const [first, second] = sorted.slice(-3, -1);
-          if (debitX < creditX) { debit = first.v; credit = second.v; }
-          else { credit = first.v; debit = second.v; }
+          const cands = sorted.slice(0, -1); // drop right-most (= likely balance)
+          const first = cands[0];
+          if (hasWord(kwLine, CREDIT_WORDS) || /salary|interest|refund|cashback/i.test(kwLine)) { credit = first.v; rule = "order-credit"; }
+          else { debit = first.v; rule = "order-debit"; }
         }
       } else if (amts.length >= 2) {
-        // no header: assume [txn, balance]; direction from keywords
+        // no header: assume [..., txn, balance]; direction from keywords
         const v = amts[amts.length - 2].v;
-        if (hasWord(line, CREDIT_WORDS) || /salary|neft.*cr|interest/i.test(line)) credit = v; else debit = v;
+        if (hasWord(kwLine, CREDIT_WORDS) || /salary|neft.*cr|interest/i.test(kwLine)) { credit = v; rule = "keyw-credit"; }
+        else { debit = v; rule = "keyw-debit"; }
       } else {
-        debit = amts[0].v;
+        debit = amts[0].v; rule = "single";
       }
       if (!debit && !credit) continue;
       // note = text between date and first amount token
@@ -150,6 +162,7 @@ function parsePages(pages) {
         kind: credit > 0 && !debit ? "income" : "expense",
         amount: credit > 0 && !debit ? credit : debit,
         category: guessCategory(note, credit > 0 && !debit),
+        dbg: dbgBits.concat([rule, "D:" + debit, "C:" + credit]).join(" "),
       };
     }
   }
