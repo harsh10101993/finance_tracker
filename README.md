@@ -1,17 +1,17 @@
-# Finance Tracker — v0.2.0
+# Finance Tracker — v0.2.6
 
-Black & white, mobile-first, offline-first finance tracker PWA. No login —
-opens straight into the app. Vue 3 + Vite + PGlite (offline Postgres in the browser).
+Soft eye-friendly finance tracker PWA (warm paper + sage light theme, muted dark
+theme). No login — opens straight into the app. Vue 3 + Vite + PGlite.
 
-Dashboard (balance, income/expense, 6-month chart, categories, recent) →
-transactions (add/edit/delete, search, filter, **bank statement PDF import** with
-one-tap deletion of all PDF imports) →
-settings (currency, black/white theme, PWA install, export/import) →
+Dashboard (3M/6M/1Y chart, balance, income/expense, categories, recent, self-transfer
+exclusion) → transactions (add/edit/delete, search, filter, **bank statement PDF
+import**, **bank SMS import**, one-tap deletion of all imports, per-import month
+picker) → settings (currency, Light/Dark theme, PWA install, export/import) →
 profile (display name, stats, erase).
 
-Bank PDF import: upload a statement PDF — credits become **income** (salary etc.),
-debits become **expenses**, with category guesses, per-row kind/category overrides
-and duplicate detection. Review everything before importing.
+Bank PDF import: credits become **income**, debits become **expenses**, transfers to
+self (e.g. "NEFT-HARSH SADASHIV PATIL-SELF") are excluded. SMS import reads SMS
+Backup & Restore `.xml` exports or text files. Review everything before importing.
 
 ## Repo layout (this folder IS the repo root when pushing to GitHub)
 

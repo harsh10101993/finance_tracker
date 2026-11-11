@@ -180,13 +180,12 @@ const CAT_RULES = [
   [/electric|water|gas|bill|recharge|mobile|broadband|emi|loan|insurance|rent/i, "Bills"],
   [/hospital|pharma|clinic|doctor/i, "Health"],
 ];
-function guessCategory(note, isIncome) {
+export function guessCategory(note, isIncome) {
   for (const [re, c] of CAT_RULES) if (re.test(note)) return c;
   return isIncome ? "Other" : "Other";
 }
 
-function isSelfTransfer(note, owner) {
-  const n = String(note || "").toLowerCase();
+export function isSelfTransfer(note, owner) {  const n = String(note || "").toLowerCase();
   if (/\bself\b/.test(n) && /transfer|neft|imps|upi|rtgs|fund|pay/i.test(n)) return true;
   if (/own\s*(a\/c|account)|self\s*(transfer|credit|debit)/i.test(n)) return true;
   if (owner) {

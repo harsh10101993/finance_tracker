@@ -4,6 +4,17 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.6] - 2026-11-11
+### Added
+- SMS import (Transactions → Import SMS): SMS Backup & Restore `.xml` exports or
+  plain-text files, one alert per line. Debits → expenses, credits → income,
+  self-transfers excluded, same review/duplicate/month workflow as PDF import.
+  Imported rows are tagged `sms` and included in one-tap "Clear imports".
+- Month picker in the import preview: toggle which statement months to add.
+### Changed
+- Black & white replaced with a soft eye-friendly palette (warm paper + sage in
+  light mode, muted slate in dark mode); Light/Dark theme toggle kept.
+
 ## [0.2.5] - 2026-11-11
 ### Added
 - Self-transfers (e.g. to Harsh Sadashiv Patil) are auto-detected in PDF imports

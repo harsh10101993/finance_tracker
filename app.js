@@ -3,8 +3,9 @@
 import { createApp, ref, reactive, computed, onMounted } from "https://cdn.jsdelivr.net/npm/vue@3.4.31/dist/vue.esm-browser.js";
 import { DB, DEFAULT_CATS } from "./db.js";
 import { parseBankPdf } from "./pdf_import.js";
+import { parseSmsFile } from "./sms_import.js";
 
-const APP_VERSION = "0.2.5";
+const APP_VERSION = "0.2.6";
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "JPY", "AUD", "CAD"];
 const LOCAL_FALLBACK_UID = "local";
 
@@ -41,6 +42,8 @@ const app = createApp({
     let deferredPrompt = null;
     // pdf import
     const importOpen = ref(false), importBusy = ref(false), importMsg = ref(""), parseErr = ref("");
+    const importKind = ref("pdf"); // 'pdf' | 'sms'
+    const fileAccept = computed(() => (importKind.value === "pdf" ? "application/pdf,.pdf" : ".xml,.txt,.csv"));
     const needPw = ref(false), pdfPassword = ref(""), pwErr = ref("");
     const importFileName = ref("statement.pdf");
     const parsed = ref([]);
@@ -128,16 +131,32 @@ const app = createApp({
         .sort((a, b) => String(b.date).localeCompare(String(a.date)));
     });
     const recent = computed(() => txs.value.slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 6));
-    const selectedCount = computed(() => parsed.value.filter((r) => r.checked).length);
-    const pdfCount = computed(() => txs.value.filter((t) => t.source === "pdf").length);
+    const selectedMonths = ref([]); // YYYY-MM strings to include from an import
+    const monthsInParsed = computed(() => {
+      const map = {};
+      for (const r of parsed.value) {
+        const m = (r.date || "").slice(0, 7);
+        if (m) map[m] = (map[m] || 0) + 1;
+      }
+      return Object.keys(map).sort().map((m) => ({ m, n: map[m], label: new Date(m + "-01T00:00").toLocaleString(undefined, { month: "short", year: "numeric" }) }));
+    });
+    function toggleMonth(m) {
+      const i = selectedMonths.value.indexOf(m);
+      if (i < 0) selectedMonths.value.push(m);
+      else selectedMonths.value.splice(i, 1);
+    }
+    const parsedVisible = computed(() => parsed.value.filter((r) => selectedMonths.value.includes((r.date || "").slice(0, 7))));
+    const hasParsed = computed(() => parsed.value.length > 0);
+    const selectedCount = computed(() => parsedVisible.value.filter((r) => r.checked).length);
+    const dupeCount = computed(() => parsedVisible.value.filter((r) => r.dupe).length);
+    const importedCount = computed(() => txs.value.filter((t) => t.source === "pdf" || t.source === "sms").length);
     async function clearPdfImports() {
-      if (!pdfCount.value) return;
-      if (!confirm("Delete all " + pdfCount.value + " PDF-imported transactions? Manual entries stay untouched.")) return;
+      if (!importedCount.value) return;
+      if (!confirm("Delete all " + importedCount.value + " imported transactions (PDF + SMS)? Manual entries stay untouched.")) return;
       const n = DB.deleteImported(uid.value);
       await loadTxs();
       toast("Deleted " + n + " imported transactions");
     }
-    const dupeCount = computed(() => parsed.value.filter((r) => r.dupe).length);
 
     function persistProfile() { DB.saveSettings({ currency: settings.currency, theme: settings.theme, profileName: profileName.value, uid: uid.value, memberSince: memberSince.value }); }
     function applyTheme() {
@@ -203,9 +222,23 @@ const app = createApp({
       toast("Sample data added");
     }
 
-    // ---------- PDF import ----------
-    function openImport() {
+    // ---------- statement import (PDF + SMS) ----------
+    function openImport(kind) {
+      importKind.value = kind || "pdf";
       importOpen.value = true; parseErr.value = ""; parsed.value = [];
+      needPw.value = false; selectedMonths.value = [];
+    }
+    function stampRows(list, foundMsg) {
+      const existing = new Set(DB.txs(uid.value).map((t) => (t.date || "") + "|" + Number(t.amount) + "|" + String(t.note || "").toLowerCase().slice(0, 40)));
+      parsed.value = list.slice(0, 500).map((r) => {
+        const key = (r.date || "") + "|" + Number(r.amount) + "|" + String(r.note || "").toLowerCase().slice(0, 40);
+        const dupe = existing.has(key);
+        return { ...r, checked: !dupe || !skipDupes.value, dupe };
+      });
+      selectedMonths.value = monthsInParsed.value.map((m) => m.m);
+      needPw.value = false;
+      importMsg.value = "";
+      toast(list.length + " found" + (foundMsg || ""));
     }
     async function tryParsePdf(pw) {
       importBusy.value = true; parseErr.value = ""; pwErr.value = "";
@@ -215,15 +248,7 @@ const app = createApp({
         // attempt — including password retries — needs a fresh copy.
         const res = await parseFn()(pdfBytesStore.slice(0), (p) => { importMsg.value = "Parsing pages… " + Math.round(p * 100) + "%"; }, pw || undefined, profileName.value);
         if (!res.transactions.length) throw new Error("No transactions found. The PDF may be a scanned image (no text layer) or an unsupported layout.");
-        const existing = new Set(DB.txs(uid.value).map((t) => (t.date || "") + "|" + Number(t.amount) + "|" + String(t.note || "").toLowerCase().slice(0, 40)));
-        parsed.value = res.transactions.slice(0, 300).map((r) => {
-          const key = (r.date || "") + "|" + Number(r.amount) + "|" + String(r.note || "").toLowerCase().slice(0, 40);
-          const dupe = existing.has(key);
-          return { ...r, checked: !dupe || !skipDupes.value, dupe };
-        });
-        needPw.value = false;
-        importMsg.value = "";
-        toast(res.transactions.length + " found" + (res.headerFound ? "" : " (no debit/credit header — check kinds)"));
+        stampRows(res.transactions, res.headerFound ? "" : " (no debit/credit header — check kinds)");
       } catch (e) {
         if (e && e.pdfPassword) {
           needPw.value = true;
@@ -233,14 +258,29 @@ const app = createApp({
       }
       importBusy.value = false;
     }
-    async function onPdfFile(ev) {
+    async function tryParseSms(file) {
+      importBusy.value = true; parseErr.value = "";
+      try {
+        importMsg.value = "Reading SMS file…";
+        const res = await parseSmsFile(file, profileName.value);
+        if (!res.transactions.length) throw new Error("No bank transactions found in that file. Use an SMS Backup & Restore XML export, or a text file with one alert per line.");
+        stampRows(res.transactions, " from " + res.count + " messages");
+      } catch (e) { parseErr.value = "Import failed: " + (e.message || e); }
+      importBusy.value = false;
+    }
+    async function onImportFile(ev) {
       const f = ev.target.files && ev.target.files[0];
       ev.target.value = "";
       if (!f) return;
-      pdfBytesStore = await f.arrayBuffer();
-      importFileName.value = f.name || "statement.pdf";
-      parsed.value = []; needPw.value = false; pdfPassword.value = "";
-      await tryParsePdf("");
+      parsed.value = []; needPw.value = false; pdfPassword.value = ""; selectedMonths.value = [];
+      if (importKind.value === "sms") {
+        importFileName.value = f.name || "sms.xml";
+        await tryParseSms(f);
+      } else {
+        pdfBytesStore = await f.arrayBuffer();
+        importFileName.value = f.name || "statement.pdf";
+        await tryParsePdf("");
+      }
     }
     function unlockPdf() { if (pdfBytesStore && pdfPassword.value) tryParsePdf(pdfPassword.value); }
     function applyDupeFlags() {
@@ -250,9 +290,9 @@ const app = createApp({
       if (!catsForKindOf(r.kind).some((c) => c.name === r.category)) r.category = (catsForKindOf(r.kind)[0] || {}).name || "Other";
     }
     async function doImportSelected() {
-      const rows = parsed.value.filter((r) => r.checked);
+      const rows = parsedVisible.value.filter((r) => r.checked);
       if (!rows.length) { toast("Nothing selected"); return; }
-      DB.addMany(rows.map((r) => ({ kind: r.kind, amount: r.amount, currency: settings.currency, category: r.category || "Other", note: (r.note || "").slice(0, 120), date: r.date, userId: uid.value, source: "pdf", batch: importFileName.value })));
+      DB.addMany(rows.map((r) => ({ kind: r.kind, amount: r.amount, currency: settings.currency, category: r.category || "Other", note: (r.note || "").slice(0, 120), date: r.date, userId: uid.value, source: importKind.value, batch: importFileName.value })));
       await loadTxs();
       importOpen.value = false; parsed.value = [];
       tab.value = "dashboard";
@@ -328,13 +368,14 @@ const app = createApp({
     return {
       boot, busy, profileName, memberSince, tab, txs, q, kindFilter, showModal, editing, form,
       settings, online, pglite, toastMsg, version, changelog, canInstall,
-      importOpen, importBusy, importMsg, parseErr, parsed, skipDupes,
+      importOpen, importBusy, importMsg, parseErr, skipDupes, parsedVisible,
       needPw, pdfPassword, pwErr, unlockPdf, showDbg, period, periodLabel,
+      importKind, fileAccept, monthsInParsed, selectedMonths, toggleMonth, hasParsed,
       CURRENCIES, cats, catsForKind, stats, monthly, maxBar, topCats, filtered, recent,
       selectedCount, dupeCount,
       money, openAdd, openEdit, setKind, saveTx, delTx, loadSample,
-      openImport, onPdfFile, applyDupeFlags, onImpKind, doImportSelected, catsForKindOf,
-      pdfCount, clearPdfImports,
+      openImport, onImportFile, applyDupeFlags, onImpKind, doImportSelected, catsForKindOf,
+      importedCount, clearPdfImports,
       saveSettings, saveProfile, exportData, importData, eraseAll, installApp,
     };
   },
@@ -376,7 +417,7 @@ const app = createApp({
             <div class="legend"><div v-for="c in topCats" :key="c.n"><b>{{c.n}}</b><span>{{money(c.v)}} · {{c.pct}}%</span></div></div>
           </div>
           <div class="card"><div class="sec-row"><div class="kicker">Recent</div><button class="iconbtn desk-add" @click="openAdd">+ Add</button></div>
-            <div v-if="!recent.length" class="sub">Nothing here yet. <button class="link" @click="openAdd">Add your first transaction</button>, <button class="link" @click="openImport">import a bank PDF</button> or <button class="link" @click="loadSample">load sample data</button>.</div>
+            <div v-if="!recent.length" class="sub">Nothing here yet. <button class="link" @click="openAdd">Add your first transaction</button>, <button class="link" @click="openImport('pdf')">import a bank PDF</button> or <button class="link" @click="loadSample">load sample data</button>.</div>
             <div v-for="t in recent" :key="t.id" class="txn"><div class="dot">{{(t.category||'?').slice(0,1)}}</div><div class="meta"><b>{{t.note||t.category}}</b><span>{{t.date}} · {{t.category}}</span></div><div :class="['amt', t.kind==='income'?'in':(t.kind==='transfer'?'tr':'out')]">{{money(t.amount)}}</div></div>
           </div>
         </div>
@@ -384,10 +425,10 @@ const app = createApp({
 
       <section v-if="tab==='transactions'">
         <div class="sec-row"><h2 class="sec">Transactions</h2><button class="iconbtn desk-add" @click="openAdd">+ Add</button></div>
-        <div class="toolbar"><input class="input" v-model="q" placeholder="Search note or category…"><select class="input" v-model="kindFilter" style="max-width:130px;"><option value="all">All</option><option value="income">Income</option><option value="expense">Expense</option><option value="transfer">Transfer</option></select><button class="btn sm" @click="openImport">Import PDF</button><button v-if="pdfCount" class="btn ghost sm" @click="clearPdfImports">Clear PDF ({{pdfCount}})</button></div>
+        <div class="toolbar"><input class="input" v-model="q" placeholder="Search note or category…"><select class="input" v-model="kindFilter" style="max-width:130px;"><option value="all">All</option><option value="income">Income</option><option value="expense">Expense</option><option value="transfer">Transfer</option></select><button class="btn sm" @click="openImport('pdf')">Import PDF</button><button class="btn ghost sm" @click="openImport('sms')">Import SMS</button><button v-if="importedCount" class="btn ghost sm" @click="clearPdfImports">Clear imports ({{importedCount}})</button></div>
         <div class="card">
           <div v-if="!filtered.length" class="sub">No transactions match.</div>
-          <div v-for="t in filtered" :key="t.id" class="txn"><div class="dot">{{(t.category||'?').slice(0,1)}}</div><div class="meta"><b>{{t.note||t.category}}</b><span>{{t.date}} · {{t.category}} · {{t.kind}}<span v-if="t.source==='pdf'"> · PDF</span></span></div><div :class="['amt', t.kind==='income'?'in':(t.kind==='transfer'?'tr':'out')]">{{money(t.amount)}}</div><button class="iconbtn" @click="openEdit(t)">Edit</button><button class="iconbtn" @click="delTx(t)">Del</button></div>
+          <div v-for="t in filtered" :key="t.id" class="txn"><div class="dot">{{(t.category||'?').slice(0,1)}}</div><div class="meta"><b>{{t.note||t.category}}</b><span>{{t.date}} · {{t.category}} · {{t.kind}}<span v-if="t.source"> · {{t.source === "sms" ? "SMS" : "PDF"}}</span></span></div><div :class="['amt', t.kind==='income'?'in':(t.kind==='transfer'?'tr':'out')]">{{money(t.amount)}}</div><button class="iconbtn" @click="openEdit(t)">Edit</button><button class="iconbtn" @click="delTx(t)">Del</button></div>
         </div>
       </section>
 
@@ -396,7 +437,7 @@ const app = createApp({
         <div class="grid">
           <div class="card"><div class="kicker">Preferences</div>
             <div class="field"><label>Currency</label><select class="input" v-model="settings.currency" @change="saveSettings"><option v-for="c in CURRENCIES" :key="c" :value="c">{{c}}</option></select></div>
-            <div class="field"><label>Theme (black &amp; white)</label><div class="seg"><button :class="{on:settings.theme==='light'}" @click="settings.theme='light';saveSettings()">White</button><button :class="{on:settings.theme==='dark'}" @click="settings.theme='dark';saveSettings()">Black</button></div></div>
+            <div class="field"><label>Theme</label><div class="seg"><button :class="{on:settings.theme==='light'}" @click="settings.theme='light';saveSettings()">Light</button><button :class="{on:settings.theme==='dark'}" @click="settings.theme='dark';saveSettings()">Dark</button></div></div>
           </div>
           <div class="card"><div class="kicker">Offline &amp; PWA</div>
             <div class="kv"><span>Local engine</span><b>PGlite: {{pglite}}</b></div>
@@ -441,18 +482,20 @@ const app = createApp({
     </div></div>
 
     <div v-if="importOpen" class="modal-bg" @click.self="importOpen=false"><div class="modal" style="max-width:600px;">
-      <b>Import bank statement (PDF)</b>
-      <p class="sub">Upload a bank statement PDF. Credits become <b>income</b>, debits become <b>expenses</b>, self-transfers are excluded. Review everything before importing.</p>
-      <p class="hint">Tip: set your full name in Profile — transfers mentioning you (e.g. "NEFT-HARSH SADASHIV PATIL-SELF") are auto-marked as transfers.</p>
-      <div v-if="!parsed.length && !importBusy" class="field"><label>PDF file</label><input class="input" type="file" accept="application/pdf,.pdf" @change="onPdfFile"></div>
+      <b>{{importKind === "sms" ? "Import bank SMS" : "Import bank statement (PDF)"}}</b>
+      <p v-if="importKind==='sms'" class="sub">Upload an SMS Backup &amp; Restore <b>.xml</b> export (or a text file, one alert per line). Debits become <b>expenses</b>, credits become <b>income</b>. Review everything before importing.</p>
+      <p v-else class="sub">Upload a bank statement PDF. Credits become <b>income</b>, debits become <b>expenses</b>, self-transfers are excluded. Review everything before importing.</p>
+      <p v-if="importKind==='pdf'" class="hint">Tip: set your full name in Profile — transfers mentioning you (e.g. "NEFT-HARSH SADASHIV PATIL-SELF") are auto-marked as transfers.</p>
+      <div v-if="!hasParsed && !importBusy" class="field"><label>{{importKind === "sms" ? "SMS file (.xml / .txt / .csv)" : "PDF file"}}</label><input class="input" type="file" :accept="fileAccept" @change="onImportFile"></div>
       <div v-if="importBusy" class="okmsg"><span class="spin"></span> {{importMsg}}</div>
       <div v-if="parseErr" class="err">{{parseErr}}</div>
-      <div v-if="needPw && !parsed.length && !importBusy" class="field"><label>PDF password</label><div class="row2"><input class="input" v-model="pdfPassword" type="password" placeholder="Enter PDF password" @keyup.enter="unlockPdf"><button class="btn sm" @click="unlockPdf">Unlock</button></div><p class="hint">This statement is password protected (banks often use account number, DOB or PAN). The password never leaves this device.</p></div>
+      <div v-if="needPw && !hasParsed && !importBusy" class="field"><label>PDF password</label><div class="row2"><input class="input" v-model="pdfPassword" type="password" placeholder="Enter PDF password" @keyup.enter="unlockPdf"><button class="btn sm" @click="unlockPdf">Unlock</button></div><p class="hint">This statement is password protected (banks often use account number, DOB or PAN). The password never leaves this device.</p></div>
       <div v-if="pwErr" class="err">{{pwErr}}</div>
-      <div v-if="parsed.length">
+      <div v-if="hasParsed">
         <div class="toolbar"><label class="sub"><input type="checkbox" v-model="skipDupes" @change="applyDupeFlags"> skip duplicates ({{dupeCount}})</label><label class="sub"><input type="checkbox" v-model="showDbg"> details</label><span class="sp"></span><b class="sub">{{selectedCount}} selected</b></div>
-        <div style="max-height:320px;overflow:auto;border:1.5px solid var(--ink);border-radius:10px;padding:4px 8px;">
-          <div v-for="(r,i) in parsed" :key="i" class="txn" :style="{opacity:r.checked?1:0.5}">
+        <div v-if="monthsInParsed.length > 1" class="toolbar" style="margin-top:-4px;"><span class="sub">Months:</span><button v-for="mo in monthsInParsed" :key="mo.m" class="iconbtn" :style="{fontWeight: selectedMonths.includes(mo.m) ? '800' : '400', opacity: selectedMonths.includes(mo.m) ? 1 : 0.55}" @click="toggleMonth(mo.m)">{{mo.label}} ({{mo.n}})</button></div>
+        <div style="max-height:320px;overflow:auto;border:1px solid var(--field);border-radius:10px;padding:4px 8px;background:var(--bg);">
+          <div v-for="(r,i) in parsedVisible" :key="i" class="txn" :style="{opacity:r.checked?1:0.5}">
             <input type="checkbox" v-model="r.checked">
             <div class="meta"><b>{{r.note}}</b><span>{{r.date}} · {{money(r.amount)}}</span><span v-if="showDbg" style="display:block;font-size:10px;">{{r.dbg}}</span></div>
             <select v-model="r.kind" @change="onImpKind(r)" style="max-width:96px;font-size:12px;padding:6px;" class="input"><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer</option></select>
