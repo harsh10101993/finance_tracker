@@ -23,6 +23,7 @@ Backup & Restore `.xml` exports or text files. Review everything before importin
 | `VERSION`, `CHANGELOG.md` | Version control + changelog (also shown in-app). |
 | `package.json`, `vite.config.js` | Vite dev/build, `base: /finance_tracker/` for Pages. |
 | `manifest.webmanifest`, `sw.js`, `icon.svg` | PWA offline support. |
+| `AGENTS.md`, `skills/` | Agent guide + vendored skills (karpathy-guidelines, security-audit, supabase). |
 | `gitignore.txt` | Save as `.gitignore` at repo root. |
 | `github-workflows-deploy.txt` | Save as `.github/workflows/deploy.yml` at repo root. |
 

@@ -4,6 +4,32 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.8] - 2026-11-11
+### Changed
+- Dashboard chart is now a diverging Y-axis chart: income bars grow UP from a
+  zero line, expense bars grow DOWN. Both use the same solid colors as the
+  income/expense amounts elsewhere (hollow-outline income is gone), and the
+  legend swatches match the bars.
+- Each month shows its savings (income − expenses) as a compact number above
+  the income bar, green when positive, red when negative.
+### Fixed
+- Month buckets and "this month" stats now use the device's local calendar
+  instead of UTC, so charts no longer shift by a month in +UTC timezones.
+
+## [0.2.7] - 2026-11-11
+### Changed
+- Categories are now exactly Salary, Food, Groceries, Petrol, Utilities,
+  Transport, Other. Utilities covers electricity, internet, mobile recharge and
+  room maintenance; Transport covers bike, train, bus, plane, boat and rickshaw
+  (plus metro/cab/auto); Petrol is its own fuel category.
+### Added
+- Cross-bank self-transfer detection: NEFT/UPI legs from the user's other-bank
+  accounts are now parsed as transfers. Any distinctive Profile-name token plus
+  a NEFT/IMPS/UPI/RTGS/fund-transfer word counts (so "NEFT-HARSH PATIL" matches
+  even without the middle name), and Profile → Own accounts accepts
+  comma-separated identifiers (last 4 digits, UPI IDs, other-bank fragments).
+  Applies to both PDF and SMS imports.
+
 ## [0.2.6] - 2026-11-11
 ### Added
 - SMS import (Transactions → Import SMS): SMS Backup & Restore `.xml` exports or

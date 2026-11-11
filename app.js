@@ -5,7 +5,7 @@ import { DB, DEFAULT_CATS } from "./db.js";
 import { parseBankPdf } from "./pdf_import.js";
 import { parseSmsFile } from "./sms_import.js";
 
-const APP_VERSION = "0.2.6";
+const APP_VERSION = "0.2.8";
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "JPY", "AUD", "CAD"];
 const LOCAL_FALLBACK_UID = "local";
 
@@ -18,14 +18,15 @@ async function fetchFirst(paths, fallback) {
   }
   return fallback;
 }
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const monthStartISO = (d) => { const x = new Date(d); return x.toISOString().slice(0, 7) + "-01"; };
+const todayISO = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+const monthStartISO = (d) => { const x = new Date(d); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-01"; };
 
 const app = createApp({
   setup() {
     const boot = ref(true);
     const uid = ref(LOCAL_FALLBACK_UID);
     const profileName = ref("My Account");
+    const selfKeys = ref(""); // own-account fragments for self-transfer detection
     const memberSince = ref(new Date().toISOString().slice(0, 10));
     const tab = ref("dashboard");
     const txs = ref([]);
@@ -62,6 +63,11 @@ const app = createApp({
       try {
         return new Intl.NumberFormat(undefined, { style: "currency", currency: settings.currency || "INR", maximumFractionDigits: 2 }).format(n);
       } catch { return (settings.currency || "") + " " + Number(n).toFixed(2); }
+    }
+    function cmoney(n) {
+      try {
+        return new Intl.NumberFormat(undefined, { style: "currency", currency: settings.currency || "INR", notation: "compact", maximumFractionDigits: 1 }).format(n);
+      } catch { return (settings.currency || "") + " " + Number(n).toFixed(0); }
     }
     const cats = computed(() => {
       const kinds = {};
@@ -103,7 +109,7 @@ const app = createApp({
       const now = new Date();
       for (let i = N - 1; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const key = d.toISOString().slice(0, 7);
+        const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
         let inc = 0, exp = 0;
         for (const t of txs.value) {
           if (t.kind === "transfer") continue;
@@ -112,7 +118,7 @@ const app = createApp({
             if (t.kind === "income") inc += a; else exp += a;
           }
         }
-        out.push({ key, label: d.toLocaleString(undefined, { month: "short" }), inc, exp });
+        out.push({ key, label: d.toLocaleString(undefined, { month: "short" }), inc, exp, sav: inc - exp });
       }
       return out;
     });
@@ -158,7 +164,7 @@ const app = createApp({
       toast("Deleted " + n + " imported transactions");
     }
 
-    function persistProfile() { DB.saveSettings({ currency: settings.currency, theme: settings.theme, profileName: profileName.value, uid: uid.value, memberSince: memberSince.value }); }
+    function persistProfile() { DB.saveSettings({ currency: settings.currency, theme: settings.theme, profileName: profileName.value, selfKeys: selfKeys.value, uid: uid.value, memberSince: memberSince.value }); }
     function applyTheme() {
       document.documentElement.setAttribute("data-theme", settings.theme === "dark" ? "dark" : "light");
     }
@@ -215,7 +221,7 @@ const app = createApp({
       const u = uid.value, c = settings.currency;
       DB.addMany([
         { kind: "income", amount: 85000, category: "Salary", note: "Monthly salary", date: todayISO(), userId: u, currency: c },
-        { kind: "expense", amount: 1200, category: "Food", note: "Groceries", date: todayISO(), userId: u, currency: c },
+        { kind: "expense", amount: 1200, category: "Groceries", note: "Groceries", date: todayISO(), userId: u, currency: c },
         { kind: "expense", amount: 800, category: "Transport", note: "Metro + cab", date: todayISO(), userId: u, currency: c },
       ]);
       loadTxs();
@@ -246,7 +252,7 @@ const app = createApp({
         importMsg.value = "Reading PDF…";
         // slice(0): pdf.js detaches (transfers) the buffer it is given, so every
         // attempt — including password retries — needs a fresh copy.
-        const res = await parseFn()(pdfBytesStore.slice(0), (p) => { importMsg.value = "Parsing pages… " + Math.round(p * 100) + "%"; }, pw || undefined, profileName.value);
+        const res = await parseFn()(pdfBytesStore.slice(0), (p) => { importMsg.value = "Parsing pages… " + Math.round(p * 100) + "%"; }, pw || undefined, profileName.value, selfKeys.value);
         if (!res.transactions.length) throw new Error("No transactions found. The PDF may be a scanned image (no text layer) or an unsupported layout.");
         stampRows(res.transactions, res.headerFound ? "" : " (no debit/credit header — check kinds)");
       } catch (e) {
@@ -262,7 +268,7 @@ const app = createApp({
       importBusy.value = true; parseErr.value = "";
       try {
         importMsg.value = "Reading SMS file…";
-        const res = await parseSmsFile(file, profileName.value);
+        const res = await parseSmsFile(file, profileName.value, selfKeys.value);
         if (!res.transactions.length) throw new Error("No bank transactions found in that file. Use an SMS Backup & Restore XML export, or a text file with one alert per line.");
         stampRows(res.transactions, " from " + res.count + " messages");
       } catch (e) { parseErr.value = "Import failed: " + (e.message || e); }
@@ -342,6 +348,7 @@ const app = createApp({
       settings.currency = s.currency || "INR";
       settings.theme = s.theme || "light";
       profileName.value = s.profileName || "My Account";
+      selfKeys.value = s.selfKeys || "";
       uid.value = s.uid || LOCAL_FALLBACK_UID;
       memberSince.value = s.memberSince || new Date().toISOString().slice(0, 10);
       persistProfile();
@@ -366,15 +373,14 @@ const app = createApp({
 
     const busy = ref(false);
     return {
-      boot, busy, profileName, memberSince, tab, txs, q, kindFilter, showModal, editing, form,
+      boot, busy, profileName, selfKeys, memberSince, tab, txs, q, kindFilter, showModal, editing, form,
       settings, online, pglite, toastMsg, version, changelog, canInstall,
       importOpen, importBusy, importMsg, parseErr, skipDupes, parsedVisible,
       needPw, pdfPassword, pwErr, unlockPdf, showDbg, period, periodLabel,
       importKind, fileAccept, monthsInParsed, selectedMonths, toggleMonth, hasParsed,
       CURRENCIES, cats, catsForKind, stats, monthly, maxBar, topCats, filtered, recent,
       selectedCount, dupeCount,
-      money, openAdd, openEdit, setKind, saveTx, delTx, loadSample,
-      openImport, onImportFile, applyDupeFlags, onImpKind, doImportSelected, catsForKindOf,
+      money, cmoney, openAdd, openEdit, setKind, saveTx, delTx, loadSample,      openImport, onImportFile, applyDupeFlags, onImpKind, doImportSelected, catsForKindOf,
       importedCount, clearPdfImports,
       saveSettings, saveProfile, exportData, importData, eraseAll, installApp,
     };
@@ -409,8 +415,17 @@ const app = createApp({
             <div class="card"><div class="kicker">Expense (all time)</div><div class="big" style="font-size:22px;">{{money(stats.expense)}}</div></div>
           </div>
           <div class="card"><div class="sec-row"><div class="kicker">Last {{periodLabel}}</div><div class="seg" style="max-width:220px;"><button :class="{on:period===3}" @click="period=3">3M</button><button :class="{on:period===6}" @click="period=6">6M</button><button :class="{on:period===12}" @click="period=12">1Y</button></div></div>
-            <div class="bars"><div class="bar" v-for="m in monthly" :key="m.key"><div class="col inc" :style="{height:Math.max(3,(m.inc/maxBar)*80)+'px'}" :title="'in '+m.inc"></div><div class="col" :style="{height:Math.max(3,(m.exp/maxBar)*80)+'px'}" :title="'out '+m.exp"></div><small>{{m.label}}</small></div></div>
-            <div class="sub">□ income ■ expense</div>
+            <div class="ybar">
+              <div class="yaxis"><div class="ysav"></div><div class="ytracks"><span class="t">{{cmoney(maxBar)}}</span><span class="z">0</span><span class="b">{{cmoney(maxBar)}}</span></div><div class="ylab"></div></div>
+              <div class="bars2"><div class="bar2" v-for="m in monthly" :key="m.key">
+                <div class="sav" :class="m.sav>=0?'in':'out'" :title="'saved '+money(m.sav)">{{cmoney(m.sav)}}</div>
+                <div class="up"><div class="col inc" :style="{height:(m.inc>0?Math.max(2,(m.inc/maxBar)*70):0)+'px'}" :title="'in '+money(m.inc)"></div></div>
+                <div class="zero"></div>
+                <div class="down"><div class="col exp" :style="{height:(m.exp>0?Math.max(2,(m.exp/maxBar)*70):0)+'px'}" :title="'out '+money(m.exp)"></div></div>
+                <small>{{m.label}}</small>
+              </div></div>
+            </div>
+            <div class="sub"><span class="sw inc"></span> income (up) · <span class="sw exp"></span> expense (down) · top number = saved</div>
           </div>
           <div class="card"><div class="kicker">Top categories</div>
             <div v-if="!topCats.length" class="sub">No data yet.</div>
@@ -457,6 +472,7 @@ const app = createApp({
         <div class="grid">
           <div class="card"><div style="display:flex;gap:14px;align-items:center;"><div class="avatar">{{(profileName||'?').slice(0,1).toUpperCase()}}</div><div><b>{{profileName}}</b><div class="sub">Tracking since {{memberSince}} · {{stats.count}} transactions</div></div></div>
             <div class="field" style="margin-top:14px;"><label>Display name</label><input class="input" v-model="profileName"></div>
+            <div class="field"><label>Own accounts (self-transfer detection)</label><input class="input" v-model="selfKeys" placeholder="e.g. 4821, myname@okhdfc, HDFC 5678"><p class="hint">Comma separated fragments of your OTHER bank accounts: last 4 digits, UPI IDs, account nicknames. Any NEFT/UPI narration containing one of these is marked as a self-transfer and excluded from totals.</p></div>
             <button class="btn sm" @click="saveProfile" :disabled="busy">Save profile</button>
           </div>
           <div class="card"><div class="kicker">Data</div>
@@ -485,7 +501,7 @@ const app = createApp({
       <b>{{importKind === "sms" ? "Import bank SMS" : "Import bank statement (PDF)"}}</b>
       <p v-if="importKind==='sms'" class="sub">Upload an SMS Backup &amp; Restore <b>.xml</b> export (or a text file, one alert per line). Debits become <b>expenses</b>, credits become <b>income</b>. Review everything before importing.</p>
       <p v-else class="sub">Upload a bank statement PDF. Credits become <b>income</b>, debits become <b>expenses</b>, self-transfers are excluded. Review everything before importing.</p>
-      <p v-if="importKind==='pdf'" class="hint">Tip: set your full name in Profile — transfers mentioning you (e.g. "NEFT-HARSH SADASHIV PATIL-SELF") are auto-marked as transfers.</p>
+      <p v-if="importKind==='pdf'" class="hint">Tip: set your full name in Profile — transfers mentioning you (e.g. "NEFT-HARSH SADASHIV PATIL-SELF") are auto-marked as transfers. NEFT/UPI legs from your other-bank accounts are caught too: add their identifiers (last 4 digits, UPI ID, other-bank name fragment, comma separated) in Profile → Own accounts.</p>
       <div v-if="!hasParsed && !importBusy" class="field"><label>{{importKind === "sms" ? "SMS file (.xml / .txt / .csv)" : "PDF file"}}</label><input class="input" type="file" :accept="fileAccept" @change="onImportFile"></div>
       <div v-if="importBusy" class="okmsg"><span class="spin"></span> {{importMsg}}</div>
       <div v-if="parseErr" class="err">{{parseErr}}</div>

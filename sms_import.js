@@ -7,7 +7,7 @@ import { guessCategory, isSelfTransfer } from "./pdf_import.js";
 const AMT_RE = /(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)/i;
 const ALL_AMT_RE = /(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)/gi;
 
-function parseSmsBody(body, ownerName) {
+function parseSmsBody(body, ownerName, extraKeys) {
   const all = [...String(body).matchAll(ALL_AMT_RE)];
   if (!all.length) return null;
   let m = all[0];
@@ -36,11 +36,11 @@ function parseSmsBody(body, ownerName) {
   else if (atM && !/avl|bal/i.test(atM[1])) note = atM[1].trim();
   else note = b.replace(/\s+/g, " ").trim().slice(0, 90);
   note = note.replace(/\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b/g, "").replace(/\s+/g, " ").replace(/\s+\./g, "").replace(/\s+(on|at|dated?)\s*$/i, "").trim().slice(0, 90) || "SMS transaction";
-  const kind = isSelfTransfer(note + " " + b, ownerName) ? "transfer" : dir;
+  const kind = isSelfTransfer(note + " " + b, ownerName, extraKeys) ? "transfer" : dir;
   return { note, amount, kind };
 }
 
-export async function parseSmsFile(file, ownerName) {
+export async function parseSmsFile(file, ownerName, extraKeys) {
   const text = await file.text();
   let msgs = [];
   if (/<sms[\s/>]/i.test(text)) {
@@ -62,7 +62,7 @@ export async function parseSmsFile(file, ownerName) {
   const txs = [];
   for (const m of msgs) {
     if (m.type && m.type !== "1") continue; // inbox alerts only
-    const t = parseSmsBody(m.body, ownerName);
+    const t = parseSmsBody(m.body, ownerName, extraKeys);
     if (!t) continue;
     txs.push({
       date: new Date(m.date).toISOString().slice(0, 10),

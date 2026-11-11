@@ -20,10 +20,10 @@ function write(key, val) {
 }
 
 export const DEFAULT_CATS = [
-  { name: "Salary", kind: "income" }, { name: "Freelance", kind: "income" },
-  { name: "Food", kind: "expense" }, { name: "Transport", kind: "expense" },
-  { name: "Shopping", kind: "expense" }, { name: "Bills", kind: "expense" },
-  { name: "Health", kind: "expense" }, { name: "Other", kind: "expense" },
+  { name: "Salary", kind: "income" },
+  { name: "Food", kind: "expense" }, { name: "Groceries", kind: "expense" },
+  { name: "Petrol", kind: "expense" }, { name: "Utilities", kind: "expense" },
+  { name: "Transport", kind: "expense" }, { name: "Other", kind: "expense" },
 ];
 
 export const DB = {
@@ -121,8 +121,8 @@ export const DB = {
   },
   deleteImported(userId) {
     const all = read(LS_TX, []);
-    const gone = all.filter((t) => t.userId === userId && t.source === "pdf").length;
-    write(LS_TX, all.filter((t) => !(t.userId === userId && t.source === "pdf")));
+    const gone = all.filter((t) => t.userId === userId && (t.source === "pdf" || t.source === "sms")).length;
+    write(LS_TX, all.filter((t) => !(t.userId === userId && (t.source === "pdf" || t.source === "sms"))));
     this._mirrorToPGlite().catch(() => {});
     return gone;
   },

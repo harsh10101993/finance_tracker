@@ -136,11 +136,30 @@ h2.sec { font-size: 18px; margin: 20px 0 10px; letter-spacing: -0.3px; }
 .amt.in::before { content: "+"; }
 .amt.out::before { content: "−"; }
 .amt.tr::before { content: "⇄ "; font-weight: 400; }
-.bars { display: flex; align-items: flex-end; gap: 4px; height: 120px; padding-top: 8px; }
-.bar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
-.bar .col { width: 100%; max-width: 44px; background: var(--expense); border-radius: 6px 6px 0 0; min-height: 3px; opacity: 0.85; }
-.bar .col.inc { background: transparent; border: 1.5px solid var(--income); opacity: 1; }
-.bar small { font-size: 9px; color: var(--muted); white-space: nowrap; }
+.ybar { display: flex; gap: 6px; padding-top: 8px; }
+.yaxis { min-width: 40px; text-align: right; font-size: 9px; color: var(--muted); white-space: nowrap; }
+.yaxis .ysav { height: 16px; }
+.yaxis .ytracks { height: 142px; position: relative; }
+.yaxis .ytracks span { position: absolute; right: 0; }
+.yaxis .ytracks .t { top: -2px; }
+.yaxis .ytracks .z { top: 50%; transform: translateY(-50%); }
+.yaxis .ytracks .b { bottom: -2px; }
+.yaxis .ylab { height: 14px; }
+.bars2 { flex: 1; display: flex; gap: 4px; min-width: 0; }
+.bar2 { flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.bar2 .sav { height: 16px; line-height: 16px; font-size: 9px; font-weight: 800; white-space: nowrap; }
+.bar2 .sav.in { color: var(--income); }
+.bar2 .sav.out { color: var(--expense); }
+.bar2 .up { height: 70px; width: 100%; display: flex; align-items: flex-end; justify-content: center; border-top: 1px dashed var(--line); border-bottom: 2px solid var(--muted); opacity: 0.9; }
+.bar2 .zero { height: 0; }
+.bar2 .down { height: 70px; width: 100%; display: flex; align-items: flex-start; justify-content: center; border-bottom: 1px dashed var(--line); }
+.bar2 .col { width: 100%; max-width: 34px; }
+.bar2 .col.inc { background: var(--income); border-radius: 4px 4px 0 0; }
+.bar2 .col.exp { background: var(--expense); border-radius: 0 0 4px 4px; }
+.bar2 small { height: 14px; line-height: 14px; font-size: 9px; color: var(--muted); white-space: nowrap; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; }
+.sw.inc { background: var(--income); }
+.sw.exp { background: var(--expense); }
 .donut { width: 120px; height: 120px; border-radius: 50%; border: 1.5px solid var(--field); margin: 0 auto; }
 .legend { font-size: 12px; margin-top: 10px; }
 .legend div { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px dotted var(--line); }

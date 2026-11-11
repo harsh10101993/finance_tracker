@@ -73,7 +73,7 @@ function headerX(cells, words) {
   return null;
 }
 
-function parsePages(pages, ownerName) {
+function parsePages(pages, ownerName, extraKeys) {
   // 1) locate header row (first page preferred): debit, credit AND balance x
   let debitX = null, creditX = null, balX = null;
   outer:
@@ -159,7 +159,7 @@ function parsePages(pages, ownerName) {
       pending = {
         date,
         note,
-        kind: isSelfTransfer(note, ownerName) ? "transfer" : (credit > 0 && !debit ? "income" : "expense"),
+        kind: isSelfTransfer(note, ownerName, extraKeys) ? "transfer" : (credit > 0 && !debit ? "income" : "expense"),
         amount: debit || credit,
         category: guessCategory(note, credit > 0 && !debit),
         dbg: dbgBits.concat([rule, "D:" + debit, "C:" + credit]).join(" "),
@@ -172,30 +172,53 @@ function parsePages(pages, ownerName) {
 }
 
 const CAT_RULES = [
-  [/salary|payroll|stipend/i, "Salary"],
-  [/freelance|consult/i, "Freelance"],
-  [/swiggy|zomato|restaurant|food|cafe|pizza|burger|bakery/i, "Food"],
-  [/uber|ola|metro|rail|petrol|diesel|fuel|cab|parking|toll/i, "Transport"],
-  [/amazon|flipkart|myntra|shopping|mall|store|retail/i, "Shopping"],
-  [/electric|water|gas|bill|recharge|mobile|broadband|emi|loan|insurance|rent/i, "Bills"],
-  [/hospital|pharma|clinic|doctor/i, "Health"],
+  [/salary|payroll|stipend|pension|bonus|dividend/i, "Salary"],
+  [/grocer|bigbasket|blinkit|zepto|grofers|\bdmart\b|d-mart|reliance\s*(fresh|smart|retail)|spencer|\bmore\b.*(super|store|mart)|supermarket|kirana|ration|\bmart\b|vegetable|dairy|\bmilk\b|amul/i, "Groceries"],
+  [/petrol|diesel|\bfuel\b|petrol\s*pump|\bhpcl\b|\bbpcl\b|\biocl\b|indian\s*oil|\bshell\b|essar|nayara|jio\s*bp/i, "Petrol"],
+  [/electric|bijli|bescom|mescom|tsspdcl|tneb|power\s*bill|internet|broadband|wifi|wi-fi|fiber|fibre|jiofiber|mobile\s*recharge|\brecharge\b|\bdth\b|prepaid|postpaid|room\s*maintenance|\bmaintenance\b|society|apartment|water\s*bill|gas\s*bill|\blpg\b|piped\s*gas/i, "Utilities"],
+  [/swiggy|zomato|restaurant|cafe|coffee|pizza|burger|bakery|\bfood\b|dining|\bhotel\b|dhaba|canteen|\beats\b|dominos|\bkfc\b|mcdonald/i, "Food"],
+  [/train|rail|\birctc\b|metro|\bbus\b|ksrtc|msrtc|plane|flight|airline|indigo|spicejet|air\s*india|vistara|boat|ferry|ship|rickshaw|\bauto\b|\bola\b|\buber\b|\bcab\b|taxi|rapido|\bbike\b|two\s*wheeler|parking|\btoll\b|fastag|transport|travel|redbus|makemytrip|yatra/i, "Transport"],
 ];
+const SALARY_RE = CAT_RULES[0][0];
 export function guessCategory(note, isIncome) {
-  for (const [re, c] of CAT_RULES) if (re.test(note)) return c;
-  return isIncome ? "Other" : "Other";
+  const n = String(note || "");
+  if (isIncome) return SALARY_RE.test(n) ? "Salary" : "Other";
+  for (let i = 1; i < CAT_RULES.length; i++) if (CAT_RULES[i][0].test(n)) return CAT_RULES[i][1];
+  return "Other";
 }
 
-export function isSelfTransfer(note, owner) {  const n = String(note || "").toLowerCase();
+const RAIL_RE = /neft|imps|rtgs|upi|\bach\b|\bnft\b|fund\s*transfer|money\s*transfer|internal\s*transfer/i;
+const DIR_RE = /transfer|fund|neft|imps|upi|rtgs|credit|debit|pay|deposit/i;
+function normKeys(input) {
+  const arr = Array.isArray(input) ? input : String(input || "").split(/[,;\n]+/);
+  return arr.map((k) => String(k || "").trim().toLowerCase()).filter((k) => k.length >= 3);
+}
+export function isSelfTransfer(note, owner, extraKeys) {  const n = String(note || "").toLowerCase();
   if (/\bself\b/.test(n) && /transfer|neft|imps|upi|rtgs|fund|pay/i.test(n)) return true;
-  if (/own\s*(a\/c|account)|self\s*(transfer|credit|debit)/i.test(n)) return true;
+  if (/own\s*(a\/c|account|bank)|self\s*(transfer|credit|debit|account)/i.test(n)) return true;
+  const keys = normKeys(extraKeys);
+  for (const k of keys) {
+    if (!k || !n.includes(k)) continue;
+    // a distinctive saved identifier (UPI id, last-4+bank, other-bank name
+    // fragment): with a rail/direction word — or on its own when long.
+    if (k.includes("@") || k.length >= 6 || RAIL_RE.test(n) || DIR_RE.test(n) || /\bself\b|\bown\b/i.test(n)) return true;
+  }
   if (owner) {
-    const parts = String(owner).toLowerCase().split(/\s+/).filter((w) => w.length > 2);
-    if (parts.length >= 2 && parts.every((p) => n.includes(p))) return true;
+    const parts = String(owner).toLowerCase().split(/[^a-z0-9@]+/).filter((w) => w.length >= 3);
+    if (parts.length) {
+      const hits = parts.filter((p) => p.length >= 4 ? n.includes(p) : n.includes(p));
+      // all significant name parts present (e.g. full-name narration) → self
+      if (parts.length >= 2 && parts.every((p) => n.includes(p))) return true;
+      // any distinctive name token + a transfer rail / direction word
+      // (catches "NEFT-HARSH PATIL" where the middle name is missing, and
+      // UPI/NEFT legs from the user's other-bank accounts).
+      if (hits.length >= 1 && (RAIL_RE.test(n) || /transfer|fund|self|own/i.test(n))) return true;
+    }
   }
   return false;
 }
 
-export async function parseBankPdf(arrayBuffer, onProgress, password, ownerName) {
+export async function parseBankPdf(arrayBuffer, onProgress, password, ownerName, extraKeys) {
   const { getDocument } = await loadPdfJs();
   let doc;
   try {
@@ -219,5 +242,5 @@ export async function parseBankPdf(arrayBuffer, onProgress, password, ownerName)
     pages.push(itemsToRows(tc.items));
     onProgress && onProgress(p / doc.numPages);
   }
-  return { ...parsePages(pages, ownerName), pages: doc.numPages };
+  return { ...parsePages(pages, ownerName, extraKeys), pages: doc.numPages };
 }
