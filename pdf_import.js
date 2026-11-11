@@ -2,13 +2,16 @@
 // pdf.js (CDN, worker via Blob shim since cross-origin Workers are blocked) +
 // geometry-aware table parser: finds Debit/Credit header columns by x-position,
 // assigns amounts to columns, classifies credit→income / debit→expense.
-const PDFJS_VER = "4.2.67";
+// NOTE: full static URLs + @vite-ignore so the Vite production build preserves
+// them as runtime CDN imports instead of trying (and failing) to bundle them.
+const PDFJS_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.2.67/build/pdf.min.mjs";
+const PDFJS_WORKER_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.2.67/build/pdf.worker.min.mjs";
 let pdfjs = null;
 
 async function loadPdfJs() {
   if (pdfjs) return pdfjs;
-  const mod = await import(`https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VER}/build/pdf.min.mjs`);
-  const wtxt = await (await fetch(`https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VER}/build/pdf.worker.min.mjs`)).text();
+  const mod = await import(/* @vite-ignore */ PDFJS_URL);
+  const wtxt = await (await fetch(PDFJS_WORKER_URL)).text();
   mod.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([wtxt], { type: "text/javascript" }));
   pdfjs = mod;
   return mod;

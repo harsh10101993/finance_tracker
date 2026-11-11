@@ -138,7 +138,8 @@ export const DB = {
   async initPGlite(onStatus) {
     try {
       // jsdelivr +esm keeps PGlite's relative wasm/data assets resolvable (esm.sh 404s on postgres.data).
-      const { PGlite } = await import("https://cdn.jsdelivr.net/npm/@electric-sql/pglite@0.2.7/+esm");
+      // @vite-ignore: keep as a runtime CDN import, never bundle.
+      const { PGlite } = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/@electric-sql/pglite@0.2.7/+esm");
       this.pglite = new PGlite("idb://finance-tracker");
       await this.pglite.query(`
         CREATE TABLE IF NOT EXISTS transactions (

@@ -4,6 +4,12 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.1] - 2026-11-11
+### Fixed
+- Bank PDF import on the deployed site: pdf.js/PGlite CDN imports are now full
+  static URLs with `/* @vite-ignore */`, so the Vite production build preserves
+  them as runtime imports instead of failing with "Unknown variable dynamic import".
+
 ## [0.2.0] - 2026-11-11
 ### Removed
 - Login, sign up and forgot-password screens. The app opens straight into the

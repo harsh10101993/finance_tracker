@@ -4,7 +4,7 @@ import { createApp, ref, reactive, computed, onMounted } from "https://cdn.jsdel
 import { DB, DEFAULT_CATS } from "./db.js";
 import { parseBankPdf } from "./pdf_import.js";
 
-const APP_VERSION = "0.2.0";
+const APP_VERSION = "0.2.1";
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "JPY", "AUD", "CAD"];
 const LOCAL_FALLBACK_UID = "local";
 
