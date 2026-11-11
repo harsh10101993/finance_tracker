@@ -13,8 +13,10 @@ Current version lives in [`VERSION`](./VERSION), app version in `package.json`.
 - Replaced emoji category icons with single-letter monochrome marks (`catMark()`) so the
   interface stays strictly black & white and renders identically on every platform.
 - Default categories in `supabase_schema.sql` now seed monochrome marks (`F`, `T`, `S`, …).
-- CI: bumped to `actions/checkout@v5` / `actions/setup-node@v5` (Node 20 runner deprecation) and
-  `configure-pages` now enables the Pages site on first run.
+- CI: bumped to `actions/checkout@v5` / `actions/setup-node@v5` (Node 20 runner deprecation).
+
+  > One-time setup on GitHub: **Settings → Pages → Source: GitHub Actions** (the workflow token
+  > cannot create the Pages site itself).
 - Dashboard/stats cards align to the top of their grid row; richer demo history covering
   three months so the 6-month chart is meaningful on first login.
 
