@@ -119,6 +119,13 @@ export const DB = {
     write(LS_TX, read(LS_TX, []).filter((t) => t.id !== id));
     this._mirrorToPGlite().catch(() => {});
   },
+  deleteImported(userId) {
+    const all = read(LS_TX, []);
+    const gone = all.filter((t) => t.userId === userId && t.source === "pdf").length;
+    write(LS_TX, all.filter((t) => !(t.userId === userId && t.source === "pdf")));
+    this._mirrorToPGlite().catch(() => {});
+    return gone;
+  },
   exportAll() {
     return JSON.stringify({ app: "finance-tracker", version: "0.1.0", exportedAt: new Date().toISOString(), txs: read(LS_TX, []), users: this.users() }, null, 2);
   },

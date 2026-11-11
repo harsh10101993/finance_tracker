@@ -4,7 +4,7 @@ import { createApp, ref, reactive, computed, onMounted } from "https://cdn.jsdel
 import { DB, DEFAULT_CATS } from "./db.js";
 import { parseBankPdf } from "./pdf_import.js";
 
-const APP_VERSION = "0.2.3";
+const APP_VERSION = "0.2.4";
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "JPY", "AUD", "CAD"];
 const LOCAL_FALLBACK_UID = "local";
 
@@ -42,6 +42,7 @@ const app = createApp({
     // pdf import
     const importOpen = ref(false), importBusy = ref(false), importMsg = ref(""), parseErr = ref("");
     const needPw = ref(false), pdfPassword = ref(""), pwErr = ref("");
+    const importFileName = ref("statement.pdf");
     const parsed = ref([]);
     const skipDupes = ref(true);
     const showDbg = ref(false);
@@ -122,6 +123,14 @@ const app = createApp({
     });
     const recent = computed(() => txs.value.slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 6));
     const selectedCount = computed(() => parsed.value.filter((r) => r.checked).length);
+    const pdfCount = computed(() => txs.value.filter((t) => t.source === "pdf").length);
+    async function clearPdfImports() {
+      if (!pdfCount.value) return;
+      if (!confirm("Delete all " + pdfCount.value + " PDF-imported transactions? Manual entries stay untouched.")) return;
+      const n = DB.deleteImported(uid.value);
+      await loadTxs();
+      toast("Deleted " + n + " imported transactions");
+    }
     const dupeCount = computed(() => parsed.value.filter((r) => r.dupe).length);
 
     function persistProfile() { DB.saveSettings({ currency: settings.currency, theme: settings.theme, profileName: profileName.value, uid: uid.value, memberSince: memberSince.value }); }
@@ -223,6 +232,7 @@ const app = createApp({
       ev.target.value = "";
       if (!f) return;
       pdfBytesStore = await f.arrayBuffer();
+      importFileName.value = f.name || "statement.pdf";
       parsed.value = []; needPw.value = false; pdfPassword.value = "";
       await tryParsePdf("");
     }
@@ -236,7 +246,7 @@ const app = createApp({
     async function doImportSelected() {
       const rows = parsed.value.filter((r) => r.checked);
       if (!rows.length) { toast("Nothing selected"); return; }
-      DB.addMany(rows.map((r) => ({ kind: r.kind, amount: r.amount, currency: settings.currency, category: r.category || "Other", note: (r.note || "").slice(0, 120), date: r.date, userId: uid.value })));
+      DB.addMany(rows.map((r) => ({ kind: r.kind, amount: r.amount, currency: settings.currency, category: r.category || "Other", note: (r.note || "").slice(0, 120), date: r.date, userId: uid.value, source: "pdf", batch: importFileName.value })));
       await loadTxs();
       importOpen.value = false; parsed.value = [];
       tab.value = "dashboard";
@@ -318,6 +328,7 @@ const app = createApp({
       selectedCount, dupeCount,
       money, openAdd, openEdit, setKind, saveTx, delTx, loadSample,
       openImport, onPdfFile, applyDupeFlags, onImpKind, doImportSelected, catsForKindOf,
+      pdfCount, clearPdfImports,
       saveSettings, saveProfile, exportData, importData, eraseAll, installApp,
     };
   },
@@ -367,10 +378,10 @@ const app = createApp({
 
       <section v-if="tab==='transactions'">
         <div class="sec-row"><h2 class="sec">Transactions</h2><button class="iconbtn desk-add" @click="openAdd">+ Add</button></div>
-        <div class="toolbar"><input class="input" v-model="q" placeholder="Search note or category…"><select class="input" v-model="kindFilter" style="max-width:130px;"><option value="all">All</option><option value="income">Income</option><option value="expense">Expense</option></select><button class="btn sm" @click="openImport">Import PDF</button></div>
+        <div class="toolbar"><input class="input" v-model="q" placeholder="Search note or category…"><select class="input" v-model="kindFilter" style="max-width:130px;"><option value="all">All</option><option value="income">Income</option><option value="expense">Expense</option></select><button class="btn sm" @click="openImport">Import PDF</button><button v-if="pdfCount" class="btn ghost sm" @click="clearPdfImports">Clear PDF ({{pdfCount}})</button></div>
         <div class="card">
           <div v-if="!filtered.length" class="sub">No transactions match.</div>
-          <div v-for="t in filtered" :key="t.id" class="txn"><div class="dot">{{(t.category||'?').slice(0,1)}}</div><div class="meta"><b>{{t.note||t.category}}</b><span>{{t.date}} · {{t.category}} · {{t.kind}}</span></div><div :class="['amt', t.kind==='income'?'in':'out']">{{money(t.amount)}}</div><button class="iconbtn" @click="openEdit(t)">Edit</button><button class="iconbtn" @click="delTx(t)">Del</button></div>
+          <div v-for="t in filtered" :key="t.id" class="txn"><div class="dot">{{(t.category||'?').slice(0,1)}}</div><div class="meta"><b>{{t.note||t.category}}</b><span>{{t.date}} · {{t.category}} · {{t.kind}}<span v-if="t.source==='pdf'"> · PDF</span></span></div><div :class="['amt', t.kind==='income'?'in':'out']">{{money(t.amount)}}</div><button class="iconbtn" @click="openEdit(t)">Edit</button><button class="iconbtn" @click="delTx(t)">Del</button></div>
         </div>
       </section>
 

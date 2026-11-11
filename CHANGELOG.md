@@ -4,6 +4,13 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.4] - 2026-11-11
+### Added
+- One-tap deletion of all PDF-imported transactions (Transactions → "Clear PDF (N)").
+  Imports are tagged (`source: pdf` + file batch); manual entries are untouched.
+  Imported rows show a "· PDF" marker, so the data stays uniform and re-imports
+  start clean.
+
 ## [0.2.3] - 2026-11-11
 ### Fixed
 - Amount parsing for real-world statements: 10+ digit reference/UTR/account numbers

@@ -4,7 +4,8 @@ Black & white, mobile-first, offline-first finance tracker PWA. No login —
 opens straight into the app. Vue 3 + Vite + PGlite (offline Postgres in the browser).
 
 Dashboard (balance, income/expense, 6-month chart, categories, recent) →
-transactions (add/edit/delete, search, filter, **bank statement PDF import**) →
+transactions (add/edit/delete, search, filter, **bank statement PDF import** with
+one-tap deletion of all PDF imports) →
 settings (currency, black/white theme, PWA install, export/import) →
 profile (display name, stats, erase).
 
