@@ -4,7 +4,7 @@ import { createApp, ref, reactive, computed, onMounted } from "https://cdn.jsdel
 import { DB, DEFAULT_CATS } from "./db.js";
 import { parseBankPdf } from "./pdf_import.js";
 
-const APP_VERSION = "0.2.4";
+const APP_VERSION = "0.2.5";
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "JPY", "AUD", "CAD"];
 const LOCAL_FALLBACK_UID = "local";
 
@@ -71,33 +71,39 @@ const app = createApp({
       if (!arr.some((c) => c.name === "Other" && c.kind === "expense")) arr.push({ name: "Other", kind: "expense" });
       return arr;
     });
-    const catsForKind = computed(() => cats.value.filter((c) => c.kind === form.kind));
-    function catsForKindOf(k) { return cats.value.filter((c) => c.kind === k); }
+    const catsForKind = computed(() => (form.kind === "transfer" ? cats.value : cats.value.filter((c) => c.kind === form.kind)));
+    function catsForKindOf(k) { return k === "transfer" ? cats.value : cats.value.filter((c) => c.kind === k); }
 
     function localStats(list) {
+      const act = list.filter((t) => t.kind !== "transfer"); // self-transfers never count
       const m = monthStartISO(new Date());
-      let income = 0, expense = 0;
+      let income = 0, expense = 0, trTotal = 0, trCount = 0;
       const byCat = {};
       for (const t of list) {
         const a = Number(t.amount) || 0;
+        if (t.kind === "transfer") { trTotal += a; trCount++; continue; }
         if (t.kind === "income") income += a; else expense += a;
         const k = t.category || "Other";
         byCat[k] = (byCat[k] || 0) + a;
       }
-      const cur = list.filter((t) => (t.date || "").slice(0, 7) === m.slice(0, 7));
+      const cur = act.filter((t) => (t.date || "").slice(0, 7) === m.slice(0, 7));
       let mIn = 0, mOut = 0;
       for (const t of cur) { const a = Number(t.amount) || 0; if (t.kind === "income") mIn += a; else mOut += a; }
-      return { income, expense, balance: income - expense, monthIncome: mIn, monthExpense: mOut, monthBalance: mIn - mOut, byCat, count: list.length };
+      return { income, expense, balance: income - expense, monthIncome: mIn, monthExpense: mOut, monthBalance: mIn - mOut, byCat, count: act.length, transfers: trTotal, transferCount: trCount };
     }
     const stats = computed(() => localStats(txs.value));
+    const period = ref(6); // dashboard chart range in months: 3 | 6 | 12
+    const periodLabel = computed(() => (period.value === 12 ? "12 months" : period.value + " months"));
     const monthly = computed(() => {
+      const N = period.value;
       const out = [];
       const now = new Date();
-      for (let i = 5; i >= 0; i--) {
+      for (let i = N - 1; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         const key = d.toISOString().slice(0, 7);
         let inc = 0, exp = 0;
         for (const t of txs.value) {
+          if (t.kind === "transfer") continue;
           if ((t.date || "").slice(0, 7) === key) {
             const a = Number(t.amount) || 0;
             if (t.kind === "income") inc += a; else exp += a;
@@ -207,7 +213,7 @@ const app = createApp({
         importMsg.value = "Reading PDF…";
         // slice(0): pdf.js detaches (transfers) the buffer it is given, so every
         // attempt — including password retries — needs a fresh copy.
-        const res = await parseFn()(pdfBytesStore.slice(0), (p) => { importMsg.value = "Parsing pages… " + Math.round(p * 100) + "%"; }, pw || undefined);
+        const res = await parseFn()(pdfBytesStore.slice(0), (p) => { importMsg.value = "Parsing pages… " + Math.round(p * 100) + "%"; }, pw || undefined, profileName.value);
         if (!res.transactions.length) throw new Error("No transactions found. The PDF may be a scanned image (no text layer) or an unsupported layout.");
         const existing = new Set(DB.txs(uid.value).map((t) => (t.date || "") + "|" + Number(t.amount) + "|" + String(t.note || "").toLowerCase().slice(0, 40)));
         parsed.value = res.transactions.slice(0, 300).map((r) => {
@@ -323,7 +329,7 @@ const app = createApp({
       boot, busy, profileName, memberSince, tab, txs, q, kindFilter, showModal, editing, form,
       settings, online, pglite, toastMsg, version, changelog, canInstall,
       importOpen, importBusy, importMsg, parseErr, parsed, skipDupes,
-      needPw, pdfPassword, pwErr, unlockPdf, showDbg,
+      needPw, pdfPassword, pwErr, unlockPdf, showDbg, period, periodLabel,
       CURRENCIES, cats, catsForKind, stats, monthly, maxBar, topCats, filtered, recent,
       selectedCount, dupeCount,
       money, openAdd, openEdit, setKind, saveTx, delTx, loadSample,
@@ -356,12 +362,12 @@ const app = createApp({
 
       <section v-if="tab==='dashboard'">
         <div class="grid">
-          <div class="card solid"><div class="kicker">Total balance</div><div class="big">{{money(stats.balance)}}</div><div class="sub">{{stats.count}} transactions · {{money(stats.monthIncome)}} in / {{money(stats.monthExpense)}} out this month</div></div>
+          <div class="card solid"><div class="kicker">Total balance</div><div class="big">{{money(stats.balance)}}</div><div class="sub">{{stats.count}} transactions · {{money(stats.monthIncome)}} in / {{money(stats.monthExpense)}} out this month</div><div v-if="stats.transferCount" class="sub">⇄ {{stats.transferCount}} self-transfers excluded ({{money(stats.transfers)}} moved)</div></div>
           <div class="grid c2">
             <div class="card"><div class="kicker">Income (all time)</div><div class="big" style="font-size:22px;">{{money(stats.income)}}</div></div>
             <div class="card"><div class="kicker">Expense (all time)</div><div class="big" style="font-size:22px;">{{money(stats.expense)}}</div></div>
           </div>
-          <div class="card"><div class="kicker">Last 6 months</div>
+          <div class="card"><div class="sec-row"><div class="kicker">Last {{periodLabel}}</div><div class="seg" style="max-width:220px;"><button :class="{on:period===3}" @click="period=3">3M</button><button :class="{on:period===6}" @click="period=6">6M</button><button :class="{on:period===12}" @click="period=12">1Y</button></div></div>
             <div class="bars"><div class="bar" v-for="m in monthly" :key="m.key"><div class="col inc" :style="{height:Math.max(3,(m.inc/maxBar)*80)+'px'}" :title="'in '+m.inc"></div><div class="col" :style="{height:Math.max(3,(m.exp/maxBar)*80)+'px'}" :title="'out '+m.exp"></div><small>{{m.label}}</small></div></div>
             <div class="sub">□ income ■ expense</div>
           </div>
@@ -371,17 +377,17 @@ const app = createApp({
           </div>
           <div class="card"><div class="sec-row"><div class="kicker">Recent</div><button class="iconbtn desk-add" @click="openAdd">+ Add</button></div>
             <div v-if="!recent.length" class="sub">Nothing here yet. <button class="link" @click="openAdd">Add your first transaction</button>, <button class="link" @click="openImport">import a bank PDF</button> or <button class="link" @click="loadSample">load sample data</button>.</div>
-            <div v-for="t in recent" :key="t.id" class="txn"><div class="dot">{{(t.category||'?').slice(0,1)}}</div><div class="meta"><b>{{t.note||t.category}}</b><span>{{t.date}} · {{t.category}}</span></div><div :class="['amt', t.kind==='income'?'in':'out']">{{money(t.amount)}}</div></div>
+            <div v-for="t in recent" :key="t.id" class="txn"><div class="dot">{{(t.category||'?').slice(0,1)}}</div><div class="meta"><b>{{t.note||t.category}}</b><span>{{t.date}} · {{t.category}}</span></div><div :class="['amt', t.kind==='income'?'in':(t.kind==='transfer'?'tr':'out')]">{{money(t.amount)}}</div></div>
           </div>
         </div>
       </section>
 
       <section v-if="tab==='transactions'">
         <div class="sec-row"><h2 class="sec">Transactions</h2><button class="iconbtn desk-add" @click="openAdd">+ Add</button></div>
-        <div class="toolbar"><input class="input" v-model="q" placeholder="Search note or category…"><select class="input" v-model="kindFilter" style="max-width:130px;"><option value="all">All</option><option value="income">Income</option><option value="expense">Expense</option></select><button class="btn sm" @click="openImport">Import PDF</button><button v-if="pdfCount" class="btn ghost sm" @click="clearPdfImports">Clear PDF ({{pdfCount}})</button></div>
+        <div class="toolbar"><input class="input" v-model="q" placeholder="Search note or category…"><select class="input" v-model="kindFilter" style="max-width:130px;"><option value="all">All</option><option value="income">Income</option><option value="expense">Expense</option><option value="transfer">Transfer</option></select><button class="btn sm" @click="openImport">Import PDF</button><button v-if="pdfCount" class="btn ghost sm" @click="clearPdfImports">Clear PDF ({{pdfCount}})</button></div>
         <div class="card">
           <div v-if="!filtered.length" class="sub">No transactions match.</div>
-          <div v-for="t in filtered" :key="t.id" class="txn"><div class="dot">{{(t.category||'?').slice(0,1)}}</div><div class="meta"><b>{{t.note||t.category}}</b><span>{{t.date}} · {{t.category}} · {{t.kind}}<span v-if="t.source==='pdf'"> · PDF</span></span></div><div :class="['amt', t.kind==='income'?'in':'out']">{{money(t.amount)}}</div><button class="iconbtn" @click="openEdit(t)">Edit</button><button class="iconbtn" @click="delTx(t)">Del</button></div>
+          <div v-for="t in filtered" :key="t.id" class="txn"><div class="dot">{{(t.category||'?').slice(0,1)}}</div><div class="meta"><b>{{t.note||t.category}}</b><span>{{t.date}} · {{t.category}} · {{t.kind}}<span v-if="t.source==='pdf'"> · PDF</span></span></div><div :class="['amt', t.kind==='income'?'in':(t.kind==='transfer'?'tr':'out')]">{{money(t.amount)}}</div><button class="iconbtn" @click="openEdit(t)">Edit</button><button class="iconbtn" @click="delTx(t)">Del</button></div>
         </div>
       </section>
 
@@ -426,7 +432,7 @@ const app = createApp({
 
     <div v-if="showModal" class="modal-bg" @click.self="showModal=false"><div class="modal">
       <b>{{editing?'Edit':'Add'}} transaction</b>
-      <div class="field"><label>Type</label><div class="seg"><button :class="{on:form.kind==='expense'}" @click="setKind('expense')">Expense</button><button :class="{on:form.kind==='income'}" @click="setKind('income')">Income</button></div></div>
+      <div class="field"><label>Type</label><div class="seg"><button :class="{on:form.kind==='expense'}" @click="setKind('expense')">Expense</button><button :class="{on:form.kind==='income'}" @click="setKind('income')">Income</button><button :class="{on:form.kind==='transfer'}" @click="setKind('transfer')">Transfer</button></div><p class="hint" v-if="form.kind==='transfer'">Transfers to self are excluded from income, expenses and balance.</p></div>
       <div class="field"><label>Amount ({{settings.currency}})</label><input class="input" v-model="form.amount" type="number" min="0" step="0.01" inputmode="decimal"></div>
       <div class="row2"><div class="field"><label>Category</label><select class="input" v-model="form.category"><option v-for="c in catsForKind" :key="c.name" :value="c.name">{{c.name}}</option></select></div>
       <div class="field"><label>Date</label><input class="input" v-model="form.date" type="date"></div></div>
@@ -436,7 +442,8 @@ const app = createApp({
 
     <div v-if="importOpen" class="modal-bg" @click.self="importOpen=false"><div class="modal" style="max-width:600px;">
       <b>Import bank statement (PDF)</b>
-      <p class="sub">Upload a bank statement PDF. Credits become <b>income</b>, debits become <b>expenses</b>. Review everything before importing.</p>
+      <p class="sub">Upload a bank statement PDF. Credits become <b>income</b>, debits become <b>expenses</b>, self-transfers are excluded. Review everything before importing.</p>
+      <p class="hint">Tip: set your full name in Profile — transfers mentioning you (e.g. "NEFT-HARSH SADASHIV PATIL-SELF") are auto-marked as transfers.</p>
       <div v-if="!parsed.length && !importBusy" class="field"><label>PDF file</label><input class="input" type="file" accept="application/pdf,.pdf" @change="onPdfFile"></div>
       <div v-if="importBusy" class="okmsg"><span class="spin"></span> {{importMsg}}</div>
       <div v-if="parseErr" class="err">{{parseErr}}</div>
@@ -448,7 +455,7 @@ const app = createApp({
           <div v-for="(r,i) in parsed" :key="i" class="txn" :style="{opacity:r.checked?1:0.5}">
             <input type="checkbox" v-model="r.checked">
             <div class="meta"><b>{{r.note}}</b><span>{{r.date}} · {{money(r.amount)}}</span><span v-if="showDbg" style="display:block;font-size:10px;">{{r.dbg}}</span></div>
-            <select v-model="r.kind" @change="onImpKind(r)" style="max-width:96px;font-size:12px;padding:6px;" class="input"><option value="expense">Expense</option><option value="income">Income</option></select>
+            <select v-model="r.kind" @change="onImpKind(r)" style="max-width:96px;font-size:12px;padding:6px;" class="input"><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer</option></select>
             <select v-model="r.category" style="max-width:104px;font-size:12px;padding:6px;" class="input"><option v-for="c in catsForKindOf(r.kind)" :key="c.name" :value="c.name">{{c.name}}</option></select>
           </div>
         </div>

@@ -4,6 +4,18 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.5] - 2026-11-11
+### Added
+- Self-transfers (e.g. to Harsh Sadashiv Patil) are auto-detected in PDF imports
+  and marked as `transfer` — excluded from income, expenses, balance and charts,
+  with a separate "self-transfers excluded" line. Set your full name in Profile
+  for name-based detection. Manual transfers supported too (type selector +
+  Transactions filter).
+- Dashboard range selector: 3 months / 6 months / 12 months chart.
+### Fixed
+- Mobile dashboard hardening: fluid balance type, no-wrap amounts, ellipsis
+  everywhere, tighter 12-month bars, wrapping section headers.
+
 ## [0.2.4] - 2026-11-11
 ### Added
 - One-tap deletion of all PDF-imported transactions (Transactions → "Clear PDF (N)").

@@ -73,7 +73,7 @@ function headerX(cells, words) {
   return null;
 }
 
-function parsePages(pages) {
+function parsePages(pages, ownerName) {
   // 1) locate header row (first page preferred): debit, credit AND balance x
   let debitX = null, creditX = null, balX = null;
   outer:
@@ -159,11 +159,12 @@ function parsePages(pages) {
       pending = {
         date,
         note,
-        kind: credit > 0 && !debit ? "income" : "expense",
-        amount: credit > 0 && !debit ? credit : debit,
+        kind: isSelfTransfer(note, ownerName) ? "transfer" : (credit > 0 && !debit ? "income" : "expense"),
+        amount: debit || credit,
         category: guessCategory(note, credit > 0 && !debit),
         dbg: dbgBits.concat([rule, "D:" + debit, "C:" + credit]).join(" "),
       };
+      if (pending.kind === "transfer") pending.dbg += " self-transfer";
     }
   }
   pushPending();
@@ -184,7 +185,18 @@ function guessCategory(note, isIncome) {
   return isIncome ? "Other" : "Other";
 }
 
-export async function parseBankPdf(arrayBuffer, onProgress, password) {
+function isSelfTransfer(note, owner) {
+  const n = String(note || "").toLowerCase();
+  if (/\bself\b/.test(n) && /transfer|neft|imps|upi|rtgs|fund|pay/i.test(n)) return true;
+  if (/own\s*(a\/c|account)|self\s*(transfer|credit|debit)/i.test(n)) return true;
+  if (owner) {
+    const parts = String(owner).toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+    if (parts.length >= 2 && parts.every((p) => n.includes(p))) return true;
+  }
+  return false;
+}
+
+export async function parseBankPdf(arrayBuffer, onProgress, password, ownerName) {
   const { getDocument } = await loadPdfJs();
   let doc;
   try {
@@ -208,5 +220,5 @@ export async function parseBankPdf(arrayBuffer, onProgress, password) {
     pages.push(itemsToRows(tc.items));
     onProgress && onProgress(p / doc.numPages);
   }
-  return { ...parsePages(pages), pages: doc.numPages };
+  return { ...parsePages(pages, ownerName), pages: doc.numPages };
 }

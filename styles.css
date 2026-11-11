@@ -95,6 +95,7 @@ body {
 
 /* ---------- cards ---------- */
 .grid { display: grid; gap: 12px; }
+.grid > * { min-width: 0; } /* prevent grid blowout on narrow screens */
 .grid.c2 { grid-template-columns: 1fr 1fr; }
 @media (min-width: 700px) { .grid.c3 { grid-template-columns: 1fr 1fr 1fr; } }
 .card { border: 1.5px solid var(--ink); border-radius: var(--radius); padding: 16px; background: var(--card); }
@@ -102,26 +103,30 @@ body {
 .card.solid .sub { color: var(--bg); opacity: 0.7; }
 .kicker { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
 .card.solid .kicker { color: inherit; opacity: 0.7; }
-.big { font-size: 30px; font-weight: 800; letter-spacing: -0.5px; margin: 4px 0; }
+.big { font-size: clamp(24px, 7vw, 30px); font-weight: 800; letter-spacing: -0.5px; margin: 4px 0; overflow-wrap: anywhere; }
+.grid.c2 .big { font-size: clamp(16px, 4.6vw, 22px); }
 .sub { font-size: 12px; color: var(--muted); }
 h2.sec { font-size: 18px; margin: 20px 0 10px; letter-spacing: -0.3px; }
 .txn { display: flex; gap: 12px; align-items: center; padding: 12px 4px; border-bottom: 1px solid var(--line); }
 .txn:last-child { border-bottom: 0; }
 .txn .dot { width: 38px; height: 38px; border-radius: 50%; border: 1.5px solid var(--ink); display: flex; align-items: center; justify-content: center; font-weight: 800; flex-shrink: 0; }
-.txn .meta { flex: 1; min-width: 0; }
+.txn .meta { flex: 1; min-width: 0; overflow: hidden; }
 .txn .meta b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.txn .meta span { font-size: 12px; color: var(--muted); }
-.amt { font-weight: 800; font-size: 15px; }
+.txn .meta span { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.amt { font-weight: 800; font-size: 15px; white-space: nowrap; flex-shrink: 0; }
 .amt.in::before { content: "+"; }
 .amt.out::before { content: "−"; }
-.bars { display: flex; align-items: flex-end; gap: 8px; height: 120px; padding-top: 8px; }
-.bar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.amt.tr::before { content: "⇄ "; font-weight: 400; }
+.bars { display: flex; align-items: flex-end; gap: 4px; height: 120px; padding-top: 8px; }
+.bar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
 .bar .col { width: 100%; max-width: 44px; background: var(--ink); border-radius: 6px 6px 0 0; min-height: 3px; }
 .bar .col.inc { background: transparent; border: 1.5px solid var(--ink); }
-.bar small { font-size: 10px; color: var(--muted); }
+.bar small { font-size: 9px; color: var(--muted); white-space: nowrap; }
 .donut { width: 120px; height: 120px; border-radius: 50%; border: 1.5px solid var(--ink); margin: 0 auto; }
 .legend { font-size: 12px; margin-top: 10px; }
-.legend div { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px dotted var(--line); }
+.legend div { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px dotted var(--line); }
+.legend div b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend div span { white-space: nowrap; flex-shrink: 0; }
 .fab {
   position: fixed; right: 16px; bottom: calc(var(--tab-h) + 16px); z-index: 21;
   width: 56px; height: 56px; border-radius: 50%; border: 1.5px solid var(--ink);
@@ -147,7 +152,7 @@ h2.sec { font-size: 18px; margin: 20px 0 10px; letter-spacing: -0.3px; }
 @keyframes sp { to { transform: rotate(360deg); } }
 .foot { text-align: center; color: var(--muted); font-size: 11px; padding: 18px 0 4px; }
 .desk-add { display: none !important; }
-.sec-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sec-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .sec-row h2.sec { margin: 20px 0 10px; }
 @media (min-width: 900px) {
   .fab { display: none !important; }
