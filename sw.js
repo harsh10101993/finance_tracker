@@ -1,6 +1,6 @@
 // Finance Tracker v0.1.0 — service worker (offline app shell).
 // NOTE: register from app.js. Works on GitHub Pages / any static host.
-const CACHE = "fintrack-v0.2.10";
+const CACHE = "fintrack-v0.2.11";
 const CORE = ["./", "./index.html", "./styles.css", "./app.js", "./db.js", "./pdf_import.js", "./supabase_client.js", "./manifest.webmanifest", "./icon.svg", "./VERSION", "./CHANGELOG.md"];
 
 self.addEventListener("install", (e) => {

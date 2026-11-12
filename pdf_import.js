@@ -48,7 +48,12 @@ function findDate(text) {
   return null;
 }
 const numVal = (s) => parseFloat(String(s).replace(/,/g, ""));
-const hasWord = (text, list) => { const t = text.toLowerCase(); return list.some((w) => t.includes(w)); };
+const hasWord = (text, list) => {
+  const t = text.toLowerCase();
+  // 1–2 letter codes (dr/cr) must match whole words — plain includes() would
+  // fire on "micro", "screen", "address" and flip debits into credits.
+  return list.some((w) => (w.length <= 2 ? new RegExp("\\b" + w + "\\b").test(t) : t.includes(w)));
+};
 
 // Group pdf.js text items into rows by y, left→right by x.
 function itemsToRows(items) {
@@ -118,13 +123,34 @@ function parsePages(pages, ownerName, extraKeys) {
       const amts = hasDec ? rawAmts.filter((a) => a.raw.includes(".")) : rawAmts;
       const dbgBits = ["amounts:[" + amts.map((a) => a.raw + "@" + Math.round(a.x)).join(",") + "]"];
       let debit = 0, credit = 0, rule = "";
-      const dr = DR_RE.test(line), cr = CR_RE.test(line);
+      // Direction markers (Dr/Cr) only count next to the TRANSACTION amount —
+      // never in the trailing balance zone ("Balance 1,25,000 Cr" describes
+      // the balance, and was flipping real debits into income).
+      const xs = amts.map((a) => a.x).sort((p, q) => p - q);
+      const cutX = balX != null ? balX - 40 : (xs.length >= 2 ? xs[xs.length - 1] - 5 : Infinity);
+      const zoneCells = row.cells.filter((c) => c.x <= cutX);
+      const zoneAmts = amts.filter((a) => a.x <= cutX);
+      const base = zoneAmts.length ? zoneAmts : amts;
+      const nearDist = (re) => {
+        let best = Infinity;
+        for (const c of zoneCells) {
+          if (!re.test(c.str)) continue;
+          for (const a of base) best = Math.min(best, Math.abs(c.x - a.x));
+        }
+        return best;
+      };
+      const drD = nearDist(DR_RE), crD = nearDist(CR_RE);
+      const dr = drD < 150, cr = crD < 150;
+      dbgBits.push("mk:" + Math.round(drD) + "/" + Math.round(crD));
       // "credit card payment" is an expense, not a credit — ignore that phrase for keywords.
-      const kwLine = line.replace(/credit\s*card/gi, "");
+      // Keywords are tested on the transaction zone only (the trailing
+      // balance "… Cr" must not count as a credit keyword either).
+      const kwLine = zoneCells.map((c) => c.str).join(" ").replace(/credit\s*card/gi, "");
       if (dr || cr) {
-        // Explicit Dr/Cr marker beats column geometry (different layouts mix per row).
+        // Nearest marker to a transaction amount wins (tie → debit, since
+        // most UPI/card traffic is money out).
         const v = amts[0].v;
-        if (cr && !dr) credit = v; else debit = v;
+        if (cr && (!dr || crD < drD)) credit = v; else debit = v;
         rule = "dr-cr-marker";
       } else if (debitX != null && creditX != null && amts.length >= 1) {
         for (const a of amts) {
@@ -145,8 +171,9 @@ function parsePages(pages, ownerName, extraKeys) {
         }
       } else if (amts.length >= 2) {
         // no header: assume [..., txn, balance]; direction from keywords
+        // ("NEFT … CR" in narration is already handled by the marker branch)
         const v = amts[amts.length - 2].v;
-        if (hasWord(kwLine, CREDIT_WORDS) || /salary|neft.*cr|interest/i.test(kwLine)) { credit = v; rule = "keyw-credit"; }
+        if (hasWord(kwLine, CREDIT_WORDS) || /salary|interest|refund|cashback/i.test(kwLine)) { credit = v; rule = "keyw-credit"; }
         else { debit = v; rule = "keyw-debit"; }
       } else {
         debit = amts[0].v; rule = "single";

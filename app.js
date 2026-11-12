@@ -5,7 +5,7 @@ import { DB, DEFAULT_CATS } from "./db.js";
 import { parseBankPdf } from "./pdf_import.js";
 import { parseSmsFile, parseSingleSms } from "./sms_import.js";
 
-const APP_VERSION = "0.2.10";
+const APP_VERSION = "0.2.11";
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "JPY", "AUD", "CAD"];
 const LOCAL_FALLBACK_UID = "local";
 

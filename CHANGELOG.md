@@ -4,6 +4,14 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.11] - 2026-11-12
+### Fixed
+- PDF import no longer flips expenses into income. Two causes fixed: the
+  balance column's Dr/Cr ("Balance 1,25,000 Cr") was overriding the real
+  direction, and 2-letter codes matched inside words ("micro", "screen").
+  Direction markers now only count next to the transaction amount, `dr`/`cr`
+  match whole words only, and keyword fallbacks ignore the balance zone.
+
 ## [0.2.10] - 2026-11-12
 ### Added
 - Post-import dedupe (Transactions → Dedupe): removes duplicate PDF/SMS
