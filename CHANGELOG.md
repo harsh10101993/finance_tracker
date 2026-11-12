@@ -4,6 +4,18 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.14] - 2026-11-12
+### Fixed
+- PDF credit/debit parsing rebuilt around balance arithmetic: when the printed
+  balances move by exactly one of the row's amounts, that decides
+  income/expense no matter what the headers or narration say (rules out
+  keyword/header misfires entirely). Same-cell `-`/parentheses/`Dr`/`Cr` and
+  explicit `Dr/Cr` indicator columns are next; header geometry (now compared
+  by column centers, since statements right-align numbers) and keywords are
+  last-resort fallbacks. Narration cells can no longer leak ref digits as fake
+  amounts, headers with digits are ignored, and unsure rows are counted so
+  the import toast tells you how many kinds to check.
+
 ## [0.2.13] - 2026-11-12
 ### Added
 - PDF import now recognizes Withdrawal/Deposit-style columns ("Withdrawal
