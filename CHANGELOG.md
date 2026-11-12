@@ -4,6 +4,13 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.12] - 2026-11-12
+### Fixed
+- UPI debits whose payee handle contains a standalone "CR" (e.g.
+  `SARUK-CR@AX`) no longer import as income. Tokens with `@` are excluded
+  from direction evidence; genuine markers (`UPI/CR/…`, `UPI/DR/…`, same-cell
+  Dr/Cr) still work, including in single-amount-column statements.
+
 ## [0.2.11] - 2026-11-12
 ### Fixed
 - PDF import no longer flips expenses into income. Two causes fixed: the

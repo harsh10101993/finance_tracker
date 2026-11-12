@@ -129,23 +129,32 @@ function parsePages(pages, ownerName, extraKeys) {
       const xs = amts.map((a) => a.x).sort((p, q) => p - q);
       const cutX = balX != null ? balX - 40 : (xs.length >= 2 ? xs[xs.length - 1] - 5 : Infinity);
       const zoneCells = row.cells.filter((c) => c.x <= cutX);
+      // UPI handles / emails (tokens with @) are never direction evidence:
+      // "SARUK-CR@AX" is a payee handle, not a credit marker. SBI's genuine
+      // "UPI/CR/…" / "UPI/DR/…" markers contain no @ and still work.
+      const noHandles = (s) => String(s).split(/\s+/).filter((t) => !t.includes("@")).join(" ");
+      const zoneText = zoneCells.map((c) => noHandles(c.str)).join(" ");
       const zoneAmts = amts.filter((a) => a.x <= cutX);
       const base = zoneAmts.length ? zoneAmts : amts;
       const nearDist = (re) => {
         let best = Infinity;
         for (const c of zoneCells) {
-          if (!re.test(c.str)) continue;
+          const t = noHandles(c.str);
+          if (!re.test(t)) continue;
           for (const a of base) best = Math.min(best, Math.abs(c.x - a.x));
         }
         return best;
       };
       const drD = nearDist(DR_RE), crD = nearDist(CR_RE);
-      const dr = drD < 150, cr = crD < 150;
+      // Any marker surviving zone + @-handle filtering counts (narration
+      // markers like SBI's "UPI/CR/…" can sit far from the amount; the balance
+      // zone — the only dangerous source — is already excluded above).
+      const dr = isFinite(drD), cr = isFinite(crD);
       dbgBits.push("mk:" + Math.round(drD) + "/" + Math.round(crD));
       // "credit card payment" is an expense, not a credit — ignore that phrase for keywords.
       // Keywords are tested on the transaction zone only (the trailing
       // balance "… Cr" must not count as a credit keyword either).
-      const kwLine = zoneCells.map((c) => c.str).join(" ").replace(/credit\s*card/gi, "");
+      const kwLine = zoneText.replace(/credit\s*card/gi, "");
       if (dr || cr) {
         // Nearest marker to a transaction amount wins (tie → debit, since
         // most UPI/card traffic is money out).
