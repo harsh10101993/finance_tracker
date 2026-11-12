@@ -3,9 +3,9 @@
 import { createApp, ref, reactive, computed, onMounted } from "https://cdn.jsdelivr.net/npm/vue@3.4.31/dist/vue.esm-browser.js";
 import { DB, DEFAULT_CATS } from "./db.js";
 import { parseBankPdf } from "./pdf_import.js";
-import { parseSmsFile } from "./sms_import.js";
+import { parseSmsFile, parseSingleSms } from "./sms_import.js";
 
-const APP_VERSION = "0.2.8";
+const APP_VERSION = "0.2.10";
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "JPY", "AUD", "CAD"];
 const LOCAL_FALLBACK_UID = "local";
 
@@ -156,6 +156,15 @@ const app = createApp({
     const selectedCount = computed(() => parsedVisible.value.filter((r) => r.checked).length);
     const dupeCount = computed(() => parsedVisible.value.filter((r) => r.dupe).length);
     const importedCount = computed(() => txs.value.filter((t) => t.source === "pdf" || t.source === "sms").length);
+    const storedDupeCount = computed(() => DB.dupeIds(uid.value).length);
+    async function removeDupes() {
+      const n = DB.dupeIds(uid.value).length;
+      if (!n) return;
+      if (!confirm("Remove " + n + " duplicate imported transaction" + (n > 1 ? "s" : "") + "? One copy of each is kept; manual entries are never touched.")) return;
+      const gone = DB.removeDupes(uid.value);
+      await loadTxs();
+      toast("Removed " + gone + " duplicate" + (gone > 1 ? "s" : ""));
+    }
     async function clearPdfImports() {
       if (!importedCount.value) return;
       if (!confirm("Delete all " + importedCount.value + " imported transactions (PDF + SMS)? Manual entries stay untouched.")) return;
@@ -295,6 +304,37 @@ const app = createApp({
     function onImpKind(r) {
       if (!catsForKindOf(r.kind).some((c) => c.name === r.category)) r.category = (catsForKindOf(r.kind)[0] || {}).name || "Other";
     }
+    // quick single-SMS add (copy-paste an alert, or OS share-target)
+    const quickOpen = ref(false), quickText = ref(""), quickResult = ref(null), quickErr = ref("");
+    function openQuick(prefill) {
+      quickOpen.value = true; quickErr.value = ""; quickResult.value = null;
+      quickText.value = prefill || "";
+      if (quickText.value.trim()) parseQuick();
+    }
+    function parseQuick() {
+      quickErr.value = ""; quickResult.value = null;
+      const r = parseSingleSms(quickText.value, profileName.value, selfKeys.value);
+      if (!r) { quickErr.value = "No transaction found in that text. Paste a full bank alert (it must mention an amount like Rs 450 and debited/credited)."; return; }
+      quickResult.value = { ...r, date: todayISO() };
+    }
+    async function pasteQuick() {
+      try {
+        const t = await navigator.clipboard.readText();
+        if (!t || !t.trim()) { toast("Clipboard is empty"); return; }
+        quickText.value = t.trim().slice(0, 500);
+        parseQuick();
+      } catch { toast("Clipboard blocked — long-press and paste manually"); }
+    }
+    async function addQuick() {
+      const r = quickResult.value;
+      if (!r || !r.amount) return;
+      DB.addTx({ kind: r.kind, amount: Number(r.amount), currency: settings.currency, category: r.category || "Other", note: (r.note || "").slice(0, 120), date: r.date || todayISO(), userId: uid.value, source: "quick" });
+      await loadTxs();
+      quickOpen.value = false;
+      tab.value = "dashboard";
+      toast("Transaction added");
+    }
+
     async function doImportSelected() {
       const rows = parsedVisible.value.filter((r) => r.checked);
       if (!rows.length) { toast("Nothing selected"); return; }
@@ -368,6 +408,16 @@ const app = createApp({
       } catch {}
       DB.initPGlite((ok) => { pglite.value = ok ? "ready" : "fallback"; });
       setTimeout(() => { if (pglite.value === "starting") pglite.value = "fallback"; }, 8000);
+      // OS share-target: installed PWA can receive shared SMS text (?text=…&title=…)
+      try {
+        const sq = new URLSearchParams(location.search);
+        const shared = (sq.get("text") || sq.get("title") || "").trim();
+        if (shared) {
+          history.replaceState(null, "", location.pathname);
+          tab.value = "transactions";
+          openQuick(shared);
+        }
+      } catch {}
       boot.value = false;
     });
 
@@ -381,7 +431,9 @@ const app = createApp({
       CURRENCIES, cats, catsForKind, stats, monthly, maxBar, topCats, filtered, recent,
       selectedCount, dupeCount,
       money, cmoney, openAdd, openEdit, setKind, saveTx, delTx, loadSample,      openImport, onImportFile, applyDupeFlags, onImpKind, doImportSelected, catsForKindOf,
-      importedCount, clearPdfImports,
+      importedCount, clearPdfImports, storedDupeCount, removeDupes,
+      quickOpen, quickText, quickResult, quickErr,
+      openQuick, parseQuick, pasteQuick, addQuick,
       saveSettings, saveProfile, exportData, importData, eraseAll, installApp,
     };
   },
@@ -440,7 +492,7 @@ const app = createApp({
 
       <section v-if="tab==='transactions'">
         <div class="sec-row"><h2 class="sec">Transactions</h2><button class="iconbtn desk-add" @click="openAdd">+ Add</button></div>
-        <div class="toolbar"><input class="input" v-model="q" placeholder="Search note or category…"><select class="input" v-model="kindFilter" style="max-width:130px;"><option value="all">All</option><option value="income">Income</option><option value="expense">Expense</option><option value="transfer">Transfer</option></select><button class="btn sm" @click="openImport('pdf')">Import PDF</button><button class="btn ghost sm" @click="openImport('sms')">Import SMS</button><button v-if="importedCount" class="btn ghost sm" @click="clearPdfImports">Clear imports ({{importedCount}})</button></div>
+        <div class="toolbar"><input class="input" v-model="q" placeholder="Search note or category…"><select class="input" v-model="kindFilter" style="max-width:130px;"><option value="all">All</option><option value="income">Income</option><option value="expense">Expense</option><option value="transfer">Transfer</option></select><button class="btn sm" @click="openImport('pdf')">Import PDF</button><button class="btn ghost sm" @click="openImport('sms')">Import SMS</button><button class="btn ghost sm" @click="openQuick('')">Quick SMS</button><button v-if="storedDupeCount" class="btn ghost sm" @click="removeDupes">Dedupe ({{storedDupeCount}})</button><button v-if="importedCount" class="btn ghost sm" @click="clearPdfImports">Clear imports ({{importedCount}})</button></div>
         <div class="card">
           <div v-if="!filtered.length" class="sub">No transactions match.</div>
           <div v-for="t in filtered" :key="t.id" class="txn"><div class="dot">{{(t.category||'?').slice(0,1)}}</div><div class="meta"><b>{{t.note||t.category}}</b><span>{{t.date}} · {{t.category}} · {{t.kind}}<span v-if="t.source"> · {{t.source === "sms" ? "SMS" : "PDF"}}</span></span></div><div :class="['amt', t.kind==='income'?'in':(t.kind==='transfer'?'tr':'out')]">{{money(t.amount)}}</div><button class="iconbtn" @click="openEdit(t)">Edit</button><button class="iconbtn" @click="delTx(t)">Del</button></div>
@@ -520,6 +572,22 @@ const app = createApp({
         </div>
       </div>
       <div class="row2" style="margin-top:12px;"><button class="btn ghost" @click="importOpen=false">Cancel</button><button class="btn" @click="doImportSelected" :disabled="!selectedCount||importBusy">Import {{selectedCount}}</button></div>
+    </div></div>
+
+    <div v-if="quickOpen" class="modal-bg" @click.self="quickOpen=false"><div class="modal">
+      <b>Quick add from SMS</b>
+      <p class="sub">Copy a bank alert SMS and paste it here (browsers can't read SMS by themselves). For fastest flow on Android: install the app, then <b>Share</b> the SMS → Finance Tracker.</p>
+      <div class="field"><label>SMS text</label><textarea class="input" v-model="quickText" rows="3" placeholder="Rs 450.00 debited … UPI-SWIGGY …"></textarea></div>
+      <div class="row2"><button class="btn ghost sm" @click="pasteQuick">Paste from clipboard</button><button class="btn ghost sm" @click="parseQuick">Detect</button></div>
+      <div v-if="quickErr" class="err">{{quickErr}}</div>
+      <div v-if="quickResult" class="card" style="margin-top:10px;">
+        <div class="sec-row"><b>{{quickResult.kind === "income" ? "+" : (quickResult.kind === "transfer" ? "⇄ " : "−")}}{{money(quickResult.amount)}}</b><span class="sub">{{quickResult.date}}</span></div>
+        <div class="field"><label>Note</label><input class="input" v-model="quickResult.note"></div>
+        <div class="row2"><div class="field"><label>Type</label><select class="input" v-model="quickResult.kind" @change="quickResult.category = (catsForKindOf(quickResult.kind)[0] || {}).name || 'Other'"><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer</option></select></div>
+        <div class="field"><label>Category</label><select class="input" v-model="quickResult.category"><option v-for="c in catsForKindOf(quickResult.kind)" :key="c.name" :value="c.name">{{c.name}}</option></select></div></div>
+        <div class="field"><label>Date</label><input class="input" v-model="quickResult.date" type="date"></div>
+      </div>
+      <div class="row2" style="margin-top:12px;"><button class="btn ghost" @click="quickOpen=false">Cancel</button><button class="btn" @click="addQuick" :disabled="!quickResult">Add transaction</button></div>
     </div></div>
 
     <div v-if="toastMsg" class="toast">{{toastMsg}}</div>

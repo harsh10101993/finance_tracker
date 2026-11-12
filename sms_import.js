@@ -40,6 +40,12 @@ function parseSmsBody(body, ownerName, extraKeys) {
   return { note, amount, kind };
 }
 
+export function parseSingleSms(text, ownerName, extraKeys) {
+  const t = parseSmsBody(String(text || ""), ownerName, extraKeys);
+  if (!t) return null;
+  return { ...t, category: guessCategory(t.note, t.kind === "income") };
+}
+
 export async function parseSmsFile(file, ownerName, extraKeys) {
   const text = await file.text();
   let msgs = [];

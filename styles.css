@@ -138,7 +138,7 @@ h2.sec { font-size: 18px; margin: 20px 0 10px; letter-spacing: -0.3px; }
 .amt.tr::before { content: "⇄ "; font-weight: 400; }
 .ybar { display: flex; gap: 6px; padding-top: 8px; }
 .yaxis { min-width: 40px; text-align: right; font-size: 9px; color: var(--muted); white-space: nowrap; }
-.yaxis .ysav { height: 16px; }
+.yaxis .ysav { height: 30px; }
 .yaxis .ytracks { height: 142px; position: relative; }
 .yaxis .ytracks span { position: absolute; right: 0; }
 .yaxis .ytracks .t { top: -2px; }
@@ -147,7 +147,8 @@ h2.sec { font-size: 18px; margin: 20px 0 10px; letter-spacing: -0.3px; }
 .yaxis .ylab { height: 14px; }
 .bars2 { flex: 1; display: flex; gap: 4px; min-width: 0; }
 .bar2 { flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 0; }
-.bar2 .sav { height: 16px; line-height: 16px; font-size: 9px; font-weight: 800; white-space: nowrap; }
+.bar2 .sav { height: 30px; line-height: 14px; font-size: 8.5px; font-weight: 800; white-space: nowrap; display: flex; align-items: flex-start; }
+.bar2:nth-child(even) .sav { align-items: flex-end; }
 .bar2 .sav.in { color: var(--income); }
 .bar2 .sav.out { color: var(--expense); }
 .bar2 .up { height: 70px; width: 100%; display: flex; align-items: flex-end; justify-content: center; border-top: 1px dashed var(--line); border-bottom: 2px solid var(--muted); opacity: 0.9; }

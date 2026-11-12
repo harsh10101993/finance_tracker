@@ -126,6 +126,28 @@ export const DB = {
     this._mirrorToPGlite().catch(() => {});
     return gone;
   },
+  dupeKey(t) {
+    return (t.kind || "") + "|" + (t.date || "") + "|" + Number(t.amount) + "|" +
+      String(t.note || "").toLowerCase().replace(/\s+/g, " ").trim();
+  },
+  // ids of imported (pdf/sms) duplicates: keeps the earliest-added row per group
+  dupeIds(userId) {
+    const rows = read(LS_TX, []).filter((t) => t.userId === userId && (t.source === "pdf" || t.source === "sms"));
+    const seen = new Map(), dupes = [];
+    for (const t of rows) {
+      const k = this.dupeKey(t);
+      if (seen.has(k)) dupes.push(t.id);
+      else seen.set(k, t.id);
+    }
+    return dupes;
+  },
+  removeDupes(userId) {
+    const ids = new Set(this.dupeIds(userId));
+    if (!ids.size) return 0;
+    write(LS_TX, read(LS_TX, []).filter((t) => !ids.has(t.id)));
+    this._mirrorToPGlite().catch(() => {});
+    return ids.size;
+  },
   exportAll() {
     return JSON.stringify({ app: "finance-tracker", version: "0.1.0", exportedAt: new Date().toISOString(), txs: read(LS_TX, []), users: this.users() }, null, 2);
   },

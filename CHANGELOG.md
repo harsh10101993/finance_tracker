@@ -4,6 +4,27 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.10] - 2026-11-12
+### Added
+- Post-import dedupe (Transactions → Dedupe): removes duplicate PDF/SMS
+  imports already in the list (same kind, date, amount and note — e.g. from
+  importing the same file twice). Keeps one copy of each; manual and Quick
+  SMS entries are never touched. The button shows the duplicate count and only
+  appears when duplicates exist.
+
+## [0.2.9] - 2026-11-11
+### Added
+- Quick SMS add (Transactions → Quick SMS): paste a bank alert, the app detects
+  amount, debit/credit, note and category — review and tap Add. One tap, no
+  file needed. "Paste from clipboard" button included.
+- Share-to-app: the installed PWA registers as an Android share target, so an
+  SMS can be shared straight into Finance Tracker, which opens Quick SMS with
+  the text pre-filled. (Browsers can't read SMS on their own — this and paste
+  are the closest a web app can get to real-time.)
+### Fixed
+- Savings labels on the dashboard chart now stagger on two rows, so big
+  numbers (e.g. ₹36.5k) on adjacent months no longer run into each other.
+
 ## [0.2.8] - 2026-11-11
 ### Changed
 - Dashboard chart is now a diverging Y-axis chart: income bars grow UP from a
