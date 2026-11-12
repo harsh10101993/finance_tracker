@@ -5,7 +5,7 @@ import { DB, DEFAULT_CATS } from "./db.js";
 import { parseBankPdf } from "./pdf_import.js";
 import { parseSmsFile, parseSingleSms } from "./sms_import.js";
 
-const APP_VERSION = "0.2.12";
+const APP_VERSION = "0.2.13";
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "JPY", "AUD", "CAD"];
 const LOCAL_FALLBACK_UID = "local";
 
@@ -263,7 +263,7 @@ const app = createApp({
         // attempt — including password retries — needs a fresh copy.
         const res = await parseFn()(pdfBytesStore.slice(0), (p) => { importMsg.value = "Parsing pages… " + Math.round(p * 100) + "%"; }, pw || undefined, profileName.value, selfKeys.value);
         if (!res.transactions.length) throw new Error("No transactions found. The PDF may be a scanned image (no text layer) or an unsupported layout.");
-        stampRows(res.transactions, res.headerFound ? "" : " (no debit/credit header — check kinds)");
+        stampRows(res.transactions, res.headerFound ? ` · columns used: ${res.headerText || "debit/credit"}` : " (no debit/credit header — check kinds)");
       } catch (e) {
         if (e && e.pdfPassword) {
           needPw.value = true;

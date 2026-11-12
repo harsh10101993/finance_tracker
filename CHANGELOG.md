@@ -4,6 +4,17 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.13] - 2026-11-12
+### Added
+- PDF import now recognizes Withdrawal/Deposit-style columns ("Withdrawal
+  Amount", "Deposit Amt (Rs.)", "Payments"/"Receipts", "Money Paid/Received",
+  "Debited"/"Credited") and uses them exactly like Debit/Credit columns:
+  amounts under withdrawal/debit become expenses, under deposit/credit become
+  income. The import toast now names the columns it used.
+### Fixed
+- Header matching strips units and brackets first, so "Withdrawal Amt (Rs.)"
+  style headers are found instead of falling back to guessing.
+
 ## [0.2.12] - 2026-11-12
 ### Fixed
 - UPI debits whose payee handle contains a standalone "CR" (e.g.

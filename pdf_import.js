@@ -17,9 +17,9 @@ async function loadPdfJs() {
   return mod;
 }
 
-const DEBIT_WORDS = ["debit", "withdrawal", "withdrawl", "withdrawn", "paid out", "paid", "spent", "dr"];
-const CREDIT_WORDS = ["credit", "deposit", "deposited", "received", "cr"];
-const BAL_WORDS = ["balance", "closing", "running", "available"];
+const DEBIT_WORDS = ["debit", "withdrawal", "withdrawals", "withdrawn", "paid", "paid out", "payments", "payment", "debited", "spent", "money out", "dr"];
+const CREDIT_WORDS = ["credit", "deposit", "deposits", "deposited", "received", "receipts", "receipt", "credited", "money in", "cr"];
+const BAL_WORDS = ["balance", "bal", "closing", "running", "available"];
 const DR_RE = /\bdr\b/i, CR_RE = /\bcr\b/i;
 const AMT_RE = /\d[\d,]*\.\d{2}|\d[\d,]*/;
 const DATE_RES = [
@@ -70,22 +70,46 @@ function itemsToRows(items) {
   return rows.map((r) => ({ y: r.y, cells: r.cells, text: r.cells.map((c) => c.str).join(" ").replace(/\s+/g, " ").trim() }));
 }
 
+// Header cells come in many shapes ("Withdrawal Amt (Rs.)", "DEPOSITS",
+// "Money Paid") — strip units/punctuation, then match whole tokens so a
+// "Withdrawal Amount" column and a "Deposit Amount" column are found by name
+// and their amounts go to expense / income by column position.
+function cleanHdr(s) {
+  return String(s).toLowerCase().replace(/\(.*?\)/g, " ").replace(/[₹]/g, " ")
+    .replace(/\b(amounts?|amts?|rs\.?|inr)\b/g, " ").replace(/[^a-z\/ ]/g, " ")
+    .replace(/\s+/g, " ").trim();
+}
 function headerX(cells, words) {
   for (const c of cells) {
-    const t = c.str.toLowerCase();
-    if (words.some((w) => t === w || t.startsWith(w))) return c.x;
+    const t = cleanHdr(c.str);
+    if (!t) continue;
+    const toks = t.split(" ");
+    const hit = words.some((w) => {
+      if (w.includes(" ")) return t.includes(w); // multi-word phrase
+      if (w.length <= 2) return toks.includes(w); // dr / cr: exact only
+      return toks.includes(w) || toks.some((tok) => tok.startsWith(w));
+    });
+    if (hit) return c;
   }
   return null;
 }
 
 function parsePages(pages, ownerName, extraKeys) {
-  // 1) locate header row (first page preferred): debit, credit AND balance x
-  let debitX = null, creditX = null, balX = null;
+  // 1) locate header row (first page preferred): debit, credit AND balance x.
+  // The matched header names are returned so the UI can show which columns
+  // were used ("Withdrawal Amount | Deposit Amount | Balance").
+  let debitX = null, creditX = null, balX = null, headerText = "";
   outer:
   for (const page of pages.slice(0, 2)) {
     for (const row of page) {
-      const dx = headerX(row.cells, DEBIT_WORDS), cx = headerX(row.cells, CREDIT_WORDS);
-      if (dx != null && cx != null) { debitX = dx; creditX = cx; balX = headerX(row.cells, BAL_WORDS); break outer; }
+      const dh = headerX(row.cells, DEBIT_WORDS), ch = headerX(row.cells, CREDIT_WORDS);
+      if (dh != null && ch != null) {
+        debitX = dh.x; creditX = ch.x;
+        const bh = headerX(row.cells, BAL_WORDS);
+        balX = bh != null ? bh.x : null;
+        headerText = [dh.str, ch.str, bh != null ? bh.str : null].filter(Boolean).join(" | ").replace(/\s+/g, " ").trim().slice(0, 80);
+        break outer;
+      }
     }
   }
   const txs = [];
@@ -204,7 +228,7 @@ function parsePages(pages, ownerName, extraKeys) {
     }
   }
   pushPending();
-  return { transactions: txs, headerFound: debitX != null && creditX != null };
+  return { transactions: txs, headerFound: debitX != null && creditX != null, headerText };
 }
 
 const CAT_RULES = [
