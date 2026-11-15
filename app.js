@@ -5,7 +5,7 @@ import { DB, DEFAULT_CATS } from "./db.js";
 import { parseBankPdf } from "./pdf_import.js";
 import { parseSmsFile, parseSingleSms } from "./sms_import.js";
 
-const APP_VERSION = "0.2.15";
+const APP_VERSION = "0.2.16";
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "JPY", "AUD", "CAD"];
 const LOCAL_FALLBACK_UID = "local";
 
@@ -151,6 +151,9 @@ const app = createApp({
       if (i < 0) selectedMonths.value.push(m);
       else selectedMonths.value.splice(i, 1);
     }
+    function allMonths() { selectedMonths.value = monthsInParsed.value.map((m) => m.m); }
+    function noMonths() { selectedMonths.value = []; }
+    function onlyMonth(m) { selectedMonths.value = [m]; }
     const parsedVisible = computed(() => parsed.value.filter((r) => selectedMonths.value.includes((r.date || "").slice(0, 7))));
     const hasParsed = computed(() => parsed.value.length > 0);
     const selectedCount = computed(() => parsedVisible.value.filter((r) => r.checked).length);
@@ -428,7 +431,7 @@ const app = createApp({
       settings, online, pglite, toastMsg, version, changelog, canInstall,
       importOpen, importBusy, importMsg, parseErr, skipDupes, parsedVisible,
       needPw, pdfPassword, pwErr, unlockPdf, showDbg, period, periodLabel,
-      importKind, fileAccept, monthsInParsed, selectedMonths, toggleMonth, hasParsed,
+      importKind, fileAccept, monthsInParsed, selectedMonths, toggleMonth, allMonths, noMonths, onlyMonth, hasParsed,
       CURRENCIES, cats, catsForKind, stats, monthly, maxBar, topCats, filtered, recent,
       selectedCount, dupeCount,
       money, cmoney, openAdd, openEdit, setKind, saveTx, delTx, loadSample,      openImport, onImportFile, applyDupeFlags, onImpKind, doImportSelected, catsForKindOf,
@@ -562,9 +565,9 @@ const app = createApp({
       <div v-if="pwErr" class="err">{{pwErr}}</div>
       <div v-if="hasParsed">
         <div class="toolbar"><label class="sub"><input type="checkbox" v-model="skipDupes" @change="applyDupeFlags"> skip duplicates ({{dupeCount}})</label><label class="sub"><input type="checkbox" v-model="showDbg"> details</label><span class="sp"></span><b class="sub">{{selectedCount}} selected</b></div>
-        <div v-if="monthsInParsed.length > 1" class="toolbar" style="margin-top:-4px;"><span class="sub">Months:</span><button v-for="mo in monthsInParsed" :key="mo.m" class="iconbtn" :style="{fontWeight: selectedMonths.includes(mo.m) ? '800' : '400', opacity: selectedMonths.includes(mo.m) ? 1 : 0.55}" @click="toggleMonth(mo.m)">{{mo.label}} ({{mo.n}})</button></div>
+        <div v-if="monthsInParsed.length > 1" class="toolbar" style="margin-top:-4px;flex-wrap:wrap;"><span class="sub">Months:</span><button class="iconbtn" @click="allMonths">All</button><button class="iconbtn" @click="noMonths">None</button><button v-for="mo in monthsInParsed" :key="mo.m" class="iconbtn" :title="'Click: toggle · Double-click: only this month'" :style="{fontWeight: selectedMonths.includes(mo.m) ? '800' : '400', opacity: selectedMonths.includes(mo.m) ? 1 : 0.55}" @click="toggleMonth(mo.m)" @dblclick="onlyMonth(mo.m)">{{mo.label}} ({{mo.n}})</button></div>
         <div style="max-height:320px;overflow:auto;border:1px solid var(--field);border-radius:10px;padding:4px 8px;background:var(--bg);">
-          <div v-for="(r,i) in parsedVisible" :key="i" class="txn" :style="{opacity:r.checked?1:0.5}">
+          <div v-for="r in parsedVisible" :key="r.date + '|' + r.amount + '|' + r.note" class="txn" :style="{opacity:r.checked?1:0.5}">
             <input type="checkbox" v-model="r.checked">
             <div class="meta"><b>{{r.note}}</b><span>{{r.date}} · {{money(r.amount)}}</span><span v-if="showDbg" style="display:block;font-size:10px;">{{r.dbg}}</span></div>
             <select v-model="r.kind" @change="onImpKind(r)" style="max-width:96px;font-size:12px;padding:6px;" class="input"><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer</option></select>

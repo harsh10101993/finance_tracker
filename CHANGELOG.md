@@ -4,6 +4,14 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.16] - 2026-11-12
+### Fixed
+- Import preview month selection: bulk **All** / **None** buttons plus
+  double-click a month for **only** that month (isolating one month from a
+  long statement no longer takes a tap per month). Review rows are now keyed
+  by date+amount+note instead of list index, so checkboxes and edits stay
+  glued to the right row when months are toggled.
+
 ## [0.2.15] - 2026-11-12
 ### Fixed
 - PDF import handles the two statement shapes in the screenshots: a `Sr No`
