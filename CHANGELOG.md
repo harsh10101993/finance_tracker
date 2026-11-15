@@ -4,6 +4,19 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.15] - 2026-11-12
+### Fixed
+- PDF import handles the two statement shapes in the screenshots: a `Sr No`
+  counter column is never mistaken for money (even without paise), notes are
+  built from the narration cells instead of the text before the first digit
+  run (rows start with the date, so every note used to collapse to
+  "Transaction"), and second dates (`Value Dt`), 16-digit refs/UTRs and `₹`
+  are scrubbed from narration, amounts and markers. Wrapped rows work too: a
+  dated row whose amount slipped to the next line is rejoined, and a lone
+  wrapped balance figure continues the balance chain instead of polluting the
+  note. A `Cr`/`Dr` suffix split into its own cell next to the balance no
+  longer counts as a transaction marker.
+
 ## [0.2.14] - 2026-11-12
 ### Fixed
 - PDF credit/debit parsing rebuilt around balance arithmetic: when the printed

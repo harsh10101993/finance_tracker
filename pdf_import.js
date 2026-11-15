@@ -137,17 +137,18 @@ function amtFromMatch(cell, pre, num, suf, raw) {
     suf: suf ? suf.toUpperCase() : null, cell,
   };
 }
-function extractAmts(cells) {
-  const stripDates = (s) => s.replace(DATE_RES[0], " ").replace(DATE_RES[1], " ").replace(DATE_RES[2], " ");
+function extractAmts(cells, skip) {
+  const stripDates = (s) => s.replace(new RegExp(DATE_RES[0].source, "g"), " ").replace(new RegExp(DATE_RES[1].source, "g"), " ").replace(new RegExp(DATE_RES[2].source, "g"), " ");
+  const usable = skip ? cells.filter((c) => !skip.has(c)) : cells;
   const strict = [];
-  for (const c of cells) {
+  for (const c of usable) {
     const s = stripDates(c.str);
     const m = s.match(STRICT_AMT_RE);
     if (m && validNum(m[2], m[0])) strict.push(amtFromMatch(c, m[1], m[2], m[3], m[0].trim()));
   }
   if (strict.length) return strict;
   const loose = [];
-  for (const c of cells) {
+  for (const c of usable) {
     const s = stripDates(c.str);
     LOOSE_AMT_RE.lastIndex = 0;
     let m;
@@ -160,6 +161,14 @@ function extractAmts(cells) {
 }
 
 const SEED_RE = /opening|brought forward|carried forward|previous balance|balance b\/f|open\.?\s*bal/i;
+
+// Narration scrub: strip both dates (statements often print txn + value
+// dates), UTR/ref/account digit runs and serial counters — none of these are
+// narration, amounts, or direction evidence.
+function cleanNoteText(s) {
+  return String(s || "").replace(new RegExp(DATE_RES[0].source, "g"), " ").replace(new RegExp(DATE_RES[1].source, "g"), " ").replace(new RegExp(DATE_RES[2].source, "g"), " ")
+    .replace(/\b\d{6,}\b/g, " ").replace(/[|\-–—:;\/]+/g, " ").replace(/\s+/g, " ").trim();
+}
 
 export function parsePages(pages, ownerName, extraKeys) {
   // 1) locate header columns (first two pages): debit, credit, balance AND a
@@ -208,19 +217,37 @@ export function parsePages(pages, ownerName, extraKeys) {
 
   const txs = [];
   let pending = null;
+  let orphan = null; // dated row whose amount wrapped to the next line: valid for one row only
   let prevBal = null; // signed previous closing balance (balance-delta chain)
   let uncertain = 0;
   const pushPending = () => { if (pending && pending.amount > 0) txs.push(pending); pending = null; };
 
   for (const page of pages) {
     for (const row of page) {
-      const line = row.text;
-      if (!line || (/page\s+\d+/i.test(line) && line.length < 20)) continue;
-      const amtsAll = extractAmts(row.cells);
-      // Prefer amounts with paise: bare integers are usually ref fragments.
-      const hasDec = amtsAll.some((a) => a.raw.includes("."));
-      const amts = hasDec ? amtsAll.filter((a) => a.raw.includes(".")) : amtsAll;
-      const date = findDate(line);
+      const line0 = row.text;
+      if (!line0 || (/page\s+\d+/i.test(line0) && line0.length < 20)) continue;
+      const useOrphan = orphan; orphan = null;
+      // Per-row prep: serial guard ("Sr No" counters before the date cell are
+      // not money) + two-tier amount extraction + paise preference.
+      const prep = (cells) => {
+        const di = cells.findIndex((c) => findDate(c.str));
+        const serial = new Set(di > 0 ? cells.slice(0, di).filter((c) => /^\s*\d{1,6}\s*$/.test(c.str)) : []);
+        const all = extractAmts(cells, serial);
+        const hd = all.some((a) => a.raw.includes("."));
+        return { serial, all, list: hd ? all.filter((a) => a.raw.includes(".")) : all };
+      };
+      let effCells = row.cells, line = line0;
+      let p = prep(effCells);
+      let serialCells = p.serial, amtsAll = p.all, amts = p.list;
+      let date = findDate(line);
+      if (!date && useOrphan && amts.length && !pending) {
+        // The previous dated row had no amounts and this dateless row does:
+        // the amount wrapped onto a second line — process them as one row.
+        effCells = useOrphan.cells.concat(row.cells);
+        line = useOrphan.text + " " + line0;
+        p = prep(effCells);
+        serialCells = p.serial; amtsAll = p.all; amts = p.list; date = useOrphan.date;
+      }
       if (!date) {
         // Opening / carried-forward rows seed the balance chain even though
         // they are not transactions themselves.
@@ -228,12 +255,22 @@ export function parsePages(pages, ownerName, extraKeys) {
           const b = amts[amts.length - 1];
           prevBal = (b.neg || b.suf === "DR") ? -b.v : b.v;
         } else if (pending && line.length > 2 && !SEED_RE.test(line)) {
-          pending.note = (pending.note + " " + line).slice(0, 160);
+          if (amts.length) {
+            // Lone amount on a dateless line = wrapped balance figure: it
+            // continues the balance chain but is not narration.
+            const scrubbed = cleanNoteText(amts.reduce((s, a) => s.split(a.raw).join(" "), line));
+            if (!scrubbed && amts.length === 1) {
+              const b = amts[0];
+              prevBal = (b.neg || b.suf === "DR") ? -b.v : b.v;
+              continue;
+            }
+          }
+          pending.note = (pending.note + " " + cleanNoteText(line)).slice(0, 160);
         }
         continue;
       }
       pushPending();
-      if (!amts.length) continue;
+      if (!amts.length) { orphan = { date, cells: effCells, text: line }; continue; }
       const dbgBits = ["amounts:[" + amts.map((a) => a.raw + "@" + Math.round(a.cx)).join(",") + "]"];
 
       // Identify the balance: nearest amount to the balance column, else the
@@ -250,7 +287,11 @@ export function parsePages(pages, ownerName, extraKeys) {
       const cands = bal ? amts.filter((a) => a !== bal) : amts.slice();
       if (!cands.length) { if (balVal != null) prevBal = balVal; continue; } // balance-only row
       const balCell = bal ? bal.cell : null;
-      const zoneCells = balCell ? row.cells.filter((c) => c !== balCell) : row.cells.slice();
+      const balCx = balCell ? (balCell.cx ?? balCell.x) : null;
+      // Zone = narration + amount cells, minus the balance cell, serial
+      // counters, and anything hugging the balance (a "Cr"/"Dr" suffix that
+      // pdf.js split into its own cell describes the balance, not the txn).
+      const zoneCells = effCells.filter((c) => c !== balCell && !serialCells.has(c) && (balCx == null || Math.abs((c.cx ?? c.x) - balCx) > 40));
       // UPI handles / emails (tokens with @) are never direction evidence:
       // "SARUK-CR@AX" is a payee handle, not a credit marker. SBI's genuine
       // "UPI/CR/…" / "UPI/DR/…" markers contain no @ and still work.
@@ -353,10 +394,16 @@ export function parsePages(pages, ownerName, extraKeys) {
       if (conf === "L") uncertain++;
       if (balVal != null) prevBal = balVal;
       if (!debit && !credit) continue;
-      // note = text between date and first amount token
-      const firstAmtIdx = line.search(AMT_RE);
-      let note = line.slice(0, firstAmtIdx > 0 ? firstAmtIdx : line.length);
-      note = note.replace(DATE_RES[0], "").replace(DATE_RES[1], "").replace(DATE_RES[2], "").replace(/[|\-–—:;]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) || "Transaction";
+      // note = narration cells after the date cell, excluding the amount
+      // cells, the balance cell and serial counters (old code took the text
+      // before the first digit run — but rows START with the date, so every
+      // note collapsed to "Transaction").
+      const txnCell = cands[idx] ? cands[idx].cell : null;
+      const narrCells = zoneCells.filter((c) => c !== txnCell);
+      const diN = narrCells.findIndex((c) => findDate(c.str));
+      // keep the date cell itself: cleanNoteText strips the date but preserves
+      // any narration merged into the same pdf.js cell.
+      let note = cleanNoteText((diN >= 0 ? narrCells.slice(diN) : narrCells).map((c) => c.str).join(" ")).slice(0, 120) || "Transaction";
       // dated opening/cARRY rows seed the chain instead of becoming txns
       if (SEED_RE.test(zoneText) && /opening/i.test(zoneText)) continue;
       pending = {
