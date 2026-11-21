@@ -1,11 +1,11 @@
 // Finance Tracker v0.2.0 — no login. Local-first (localStorage + PGlite mirror).
 // Bank statement PDF import: credits → income, debits → expenses.
-import { createApp, ref, reactive, computed, onMounted } from "https://cdn.jsdelivr.net/npm/vue@3.4.31/dist/vue.esm-browser.js";
+import { createApp, ref, reactive, computed, onMounted } from "./vendor/vue.esm-browser.js";
 import { DB, DEFAULT_CATS } from "./db.js";
 import { parseBankPdf } from "./pdf_import.js";
 import { parseSmsFile, parseSingleSms } from "./sms_import.js";
 
-const APP_VERSION = "0.2.16";
+const APP_VERSION = "0.2.17";
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "JPY", "AUD", "CAD"];
 const LOCAL_FALLBACK_UID = "local";
 
@@ -40,6 +40,7 @@ const app = createApp({
     const version = ref(APP_VERSION);
     const changelog = ref("");
     const canInstall = ref(false);
+    const swUpdate = ref(false);
     let deferredPrompt = null;
     // pdf import
     const importOpen = ref(false), importBusy = ref(false), importMsg = ref(""), parseErr = ref("");
@@ -400,13 +401,24 @@ const app = createApp({
       await loadTxs();
       version.value = (await fetchFirst(["src/VERSION", "VERSION"], APP_VERSION)).trim() || APP_VERSION;
       changelog.value = await fetchFirst(["src/CHANGELOG.md", "CHANGELOG.md"], "");
-      window.addEventListener("online", () => (online.value = true));
-      window.addEventListener("offline", () => (online.value = false));
+      window.addEventListener("online", () => { online.value = true; toast("Back online"); });
+      window.addEventListener("offline", () => { online.value = false; toast("You're offline — everything keeps working, saved on this device"); });
       window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredPrompt = e; canInstall.value = true; });
       try {
         if ("serviceWorker" in navigator) {
           for (const u of ["sw.js", "src/sw.js", "./sw.js", "./src/sw.js"]) {
-            try { await navigator.serviceWorker.register(u); break; } catch {}
+            try {
+              const reg = await navigator.serviceWorker.register(u);
+              if (reg) {
+                reg.addEventListener("updatefound", () => {
+                  const nw = reg.installing;
+                  if (nw) nw.addEventListener("statechange", () => {
+                    if (nw.state === "installed" && navigator.serviceWorker.controller) swUpdate.value = true;
+                  });
+                });
+              }
+              break;
+            } catch {}
           }
         }
       } catch {}
@@ -428,7 +440,7 @@ const app = createApp({
     const busy = ref(false);
     return {
       boot, busy, profileName, selfKeys, memberSince, tab, txs, q, kindFilter, showModal, editing, form,
-      settings, online, pglite, toastMsg, version, changelog, canInstall,
+      settings, online, pglite, toastMsg, version, changelog, canInstall, swUpdate,
       importOpen, importBusy, importMsg, parseErr, skipDupes, parsedVisible,
       needPw, pdfPassword, pwErr, unlockPdf, showDbg, period, periodLabel,
       importKind, fileAccept, monthsInParsed, selectedMonths, toggleMonth, allMonths, noMonths, onlyMonth, hasParsed,
@@ -452,6 +464,7 @@ const app = createApp({
       <span class="sp"></span>
       <span :class="['netdot', online?'':'off']" :title="online?'online':'offline'"></span>
       <small class="sub">{{online?'online':'offline'}}</small>
+      <button v-if="swUpdate" class="btn sm" @click="() => location.reload()" title="A new version was downloaded">Update app</button>
     </div></div>
 
     <div class="layout"><div>

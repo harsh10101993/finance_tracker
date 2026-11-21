@@ -4,6 +4,17 @@ All notable changes to Finance Tracker are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The backend source of truth is `supabase_schema.sql` (its own version history is at the bottom of that file).
 
+## [0.2.17] - 2026-11-12
+### Added
+- Full PWA + offline support: Vue and pdf.js are now vendored under
+  `src/vendor/` (no more boot-critical CDN), the service worker precaches the
+  whole app shell including PNG icons, runtime-caches cross-origin libraries
+  (PGlite/Supabase), and falls back to the cached shell for navigations —
+  install the app and it opens with zero network. Manifest gains `id`,
+  categories and real 192/512 + maskable PNG icons (plus iOS touch/status-bar
+  tags); going offline/online now toasts, and a downloaded app update shows an
+  "Update app" button in the top bar.
+
 ## [0.2.16] - 2026-11-12
 ### Fixed
 - Import preview month selection: bulk **All** / **None** buttons plus

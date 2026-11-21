@@ -22,7 +22,8 @@ Backup & Restore `.xml` exports or text files. Review everything before importin
 | `supabase_client.js`, `supabase_schema.sql` | Kept for optional future cloud use (not required by the app). |
 | `VERSION`, `CHANGELOG.md` | Version control + changelog (also shown in-app). |
 | `package.json`, `vite.config.js` | Vite dev/build, `base: /finance_tracker/` for Pages. |
-| `manifest.webmanifest`, `sw.js`, `icon.svg` | PWA offline support. |
+| `manifest.webmanifest`, `sw.js`, `icon.svg`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` | PWA offline support (installable icons + cached shell). |
+| `vendor/` | Vendored runtime libs (Vue, pdf.js) so the app boots fully offline. |
 | `AGENTS.md`, `skills/` | Agent guide + vendored skills (karpathy-guidelines, security-audit, supabase). |
 | `gitignore.txt` | Save as `.gitignore` at repo root. |
 | `github-workflows-deploy.txt` | Save as `.github/workflows/deploy.yml` at repo root. |

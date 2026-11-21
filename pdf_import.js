@@ -1,6 +1,7 @@
 // Finance Tracker — bank statement PDF import.
-// pdf.js (CDN, worker via Blob shim since cross-origin Workers are blocked) +
-// geometry-aware table parser with balance-delta ground truth. Direction is
+// pdf.js (vendored under src/vendor/, worker via Blob shim since cross-origin
+// Workers are blocked) + geometry-aware table parser with balance-delta
+// ground truth. Direction is
 // decided in this priority order:
 //   1. balance math: balance_now - balance_prev == +/-txn amount (decisive —
 //      two printed numbers agreeing beats any wording guess; also validates
@@ -13,10 +14,12 @@
 //      statements right-align numbers, so left edges wander while centers hold.
 //   6. narration keywords. Anything still unsure defaults to expense and is
 //      counted as uncertain so the UI can ask the user to check kinds.
-// NOTE: full static URLs + @vite-ignore so the Vite production build preserves
-// them as runtime CDN imports instead of trying (and failing) to bundle them.
-const PDFJS_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.2.67/build/pdf.min.mjs";
-const PDFJS_WORKER_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.2.67/build/pdf.worker.min.mjs";
+// NOTE: vendored files + @vite-ignore so the Vite production build keeps this
+// as a runtime import of a local file (works offline via the service worker).
+// Resolved against the module URL (not the document) so the worker fetch also
+// works where <base> points elsewhere, e.g. the Perchance preview iframe.
+const PDFJS_URL = new URL("./vendor/pdf.min.mjs", import.meta.url).href;
+const PDFJS_WORKER_URL = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
 let pdfjs = null;
 
 async function loadPdfJs() {

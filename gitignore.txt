@@ -1,0 +1,9 @@
+# gitignore (repo root `.gitignore`)
+# This copy lives at src/gitignore.txt because dotfiles cannot be stored under
+# Perchance src/. When pushing to GitHub, save it as `.gitignore` at repo root.
+node_modules/
+dist/
+.DS_Store
+*.local
+.env
+.env.local
